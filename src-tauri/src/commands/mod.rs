@@ -39,3 +39,29 @@ pub async fn check_git() -> Result<git_service::GitProbe, AppError> {
             AppError::new(ErrorCode::InstallFailed).with_detail(e.to_string())
         })?
 }
+
+// ---------------------------------------------------------------------------
+// Providers (plan 04)
+// ---------------------------------------------------------------------------
+
+/// Detect every registered agent provider on this machine.
+#[tauri::command]
+pub async fn detect_providers(
+) -> Result<Vec<crate::providers::ProviderDetectionResult>, AppError> {
+    // Filesystem reads only; block briefly rather than spawning.
+    Ok(crate::providers::detect_all())
+}
+
+/// List skills for one provider in one scope (global or a registered project).
+#[tauri::command]
+pub async fn get_skills(
+    provider_id: crate::models::ProviderId,
+    scope: crate::models::SkillScope,
+) -> Result<Vec<crate::models::Skill>, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let provider = crate::providers::provider_by_id(provider_id)?;
+        crate::providers::skills_for_scope(provider.as_ref(), &scope)
+    })
+    .await
+    .map_err(|e| AppError::new(ErrorCode::InstallFailed).with_detail(e.to_string()))?
+}

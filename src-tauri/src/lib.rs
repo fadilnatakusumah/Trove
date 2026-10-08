@@ -21,6 +21,8 @@ pub fn run() {
     .invoke_handler(tauri::generate_handler![
       commands::open_folder,
       commands::check_git,
+      commands::detect_providers,
+      commands::get_skills,
     ])
     .run(tauri::generate_context!())
     .expect("error while building tauri application");

@@ -11,6 +11,7 @@ const PROVIDER_LABEL: Record<ProviderId, string> = {
   claude: "Claude Code",
   cursor: "Cursor",
   codex: "Codex",
+  opencode: "OpenCode",
 };
 
 export function providerLabel(id: ProviderId): string {

@@ -169,7 +169,9 @@ fn get_skills_global_scope_when_dir_missing_is_empty_ok() {
 #[test]
 fn detection_reports_supported_flags() {
     let results = providers::detect_all();
-    assert_eq!(results.len(), 3);
+    // One result per registered provider — count with all_providers() so
+    // adding a provider doesn't require editing this assertion.
+    assert_eq!(results.len(), providers::all_providers().len());
     let by_id = |id: ProviderId| {
         results
             .iter()
@@ -178,6 +180,7 @@ fn detection_reports_supported_flags() {
     };
     assert!(!by_id(ProviderId::Claude).supports_disable);
     assert!(!by_id(ProviderId::Cursor).supports_disable);
+    assert!(!by_id(ProviderId::Opencode).supports_disable);
     assert!(by_id(ProviderId::Codex).supports_disable);
     // Global dir paths are always populated (display target), even when the
     // dir doesn't exist on this machine.

@@ -57,7 +57,7 @@ export function SkillDetailPage() {
 
   if (!skill) {
     return (
-      <main className="flex flex-1 flex-col gap-4 p-6">
+      <main className="flex flex-1 flex-col gap-4 p-4 sm:p-6">
         <BackLink />
         <EmptyState title="Skill not found" hint="It may have been uninstalled or moved." />
       </main>
@@ -65,21 +65,23 @@ export function SkillDetailPage() {
   }
 
   return (
-    <main className="flex flex-1 flex-col gap-4 p-6">
+    <main className="flex flex-1 flex-col gap-4 p-4 sm:p-6">
       <BackLink />
 
       <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <div className="flex items-center gap-2">
             <EnabledDot enabled={skill.enabled} />
-            <h1 className="text-2xl font-semibold tracking-tight">{skill.name}</h1>
+            <h1 className="truncate text-2xl font-semibold tracking-tight">
+              {skill.name}
+            </h1>
           </div>
           {skill.description ? (
             <p className="mt-1 text-sm text-muted-foreground">{skill.description}</p>
           ) : null}
         </div>
-        <div className="flex items-center gap-2">
-          {/* Lifecycle actions (enable/disable/uninstall) land in plans 06–07. */}
+        <div className="flex shrink-0 items-center gap-2">
+          {/* Lifecycle actions (enable/disable/uninstall) land in plan 07. */}
           <Button
             variant="outline"
             onClick={() => {
@@ -155,11 +157,12 @@ function BackLink() {
 
 function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-4">
-      <span className="w-24 shrink-0 text-xs uppercase tracking-wide text-muted-foreground">
+    // Stacks in narrow windows so long paths wrap instead of overflowing.
+    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-4">
+      <span className="shrink-0 text-xs uppercase tracking-wide text-muted-foreground sm:w-24">
         {label}
       </span>
-      <div className="min-w-0">{children}</div>
+      <div className="min-w-0 break-all">{children}</div>
     </div>
   );
 }

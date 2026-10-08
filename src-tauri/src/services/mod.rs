@@ -6,5 +6,6 @@
 
 pub mod filesystem_service;
 pub mod git_service;
+pub mod install_service;
 pub mod project_service;
 pub mod skill_service;

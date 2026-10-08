@@ -36,6 +36,13 @@ impl AgentProvider for CursorProvider {
         ))
     }
 
+    /// Skills-dir parent is `~` (always exists) — use Cursor's own dir.
+    fn config_root(&self) -> Option<PathBuf> {
+        Some(crate::services::filesystem_service::resolve_home_relative(
+            "~/.cursor",
+        ))
+    }
+
     fn project_skills_dirs(&self, project: &Path) -> Vec<PathBuf> {
         vec![
             project.join(".cursor").join("skills"),

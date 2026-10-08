@@ -17,8 +17,6 @@ export interface ProviderDetection {
 
 export const queryKeys = {
   providers: ["providers"] as const,
-  skills: (providerId: ProviderId, scope: SkillScope) =>
-    ["skills", providerId, scope] as const,
 };
 
 export function useProviders() {

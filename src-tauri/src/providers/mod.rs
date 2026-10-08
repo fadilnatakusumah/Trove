@@ -8,6 +8,7 @@
 pub mod claude;
 pub mod codex;
 pub mod cursor;
+pub mod opencode;
 
 use std::path::{Path, PathBuf};
 
@@ -37,6 +38,18 @@ pub trait AgentProvider: Send + Sync {
     /// Global skills root (resolved, no `~`). `None` = convention absent.
     fn global_skills_dir(&self) -> Option<PathBuf>;
 
+    /// The agent's config root (e.g. `~/.config/opencode`), used to decide
+    /// whether the agent is installed. Defaults to the parent of the skills
+    /// dir, which is right for every agent here.
+    ///
+    /// Detection must NOT require the skills dir to exist: an installed agent
+    /// that has never had a skill installed still has its config root, and
+    /// "not detected" would be a lie the user can disprove with `agent -v`.
+    fn config_root(&self) -> Option<PathBuf> {
+        self.global_skills_dir()
+            .and_then(|d| d.parent().map(Path::to_path_buf))
+    }
+
     /// Project-level skills roots. A Vec because some agents honor multiple
     /// conventions (e.g. Cursor reads `.cursor/skills` and `.agents/skills`).
     fn project_skills_dirs(&self, project: &Path) -> Vec<PathBuf>;
@@ -56,6 +69,7 @@ pub fn all_providers() -> Vec<Box<dyn AgentProvider>> {
         Box::new(claude::ClaudeProvider),
         Box::new(cursor::CursorProvider),
         Box::new(codex::CodexProvider),
+        Box::new(opencode::OpencodeProvider),
     ]
 }
 
@@ -67,6 +81,10 @@ pub fn provider_by_id(id: ProviderId) -> Result<Box<dyn AgentProvider>, AppError
 }
 
 /// Detection across every registered provider.
+///
+/// "Detected" = the agent's config root exists (installed/configured), NOT
+/// that the skills dir exists. An agent with no skills yet is still installed;
+/// reporting it as undetected would contradict `agent --version`.
 pub fn detect_all() -> Vec<ProviderDetectionResult> {
     all_providers()
         .into_iter()
@@ -75,7 +93,7 @@ pub fn detect_all() -> Vec<ProviderDetectionResult> {
             ProviderDetectionResult {
                 provider_id: p.id(),
                 name: p.name(),
-                detected: global.as_ref().is_some_and(|d| d.is_dir()),
+                detected: p.config_root().as_ref().is_some_and(|d| d.is_dir()),
                 global_skills_dir: global.as_ref().map(|d| display_home_path(d)),
                 supports_disable: p.supports_disable(),
             }

@@ -34,6 +34,8 @@ pub fn run() {
       commands::detect_providers,
       commands::get_skills,
       commands::list_skill_files,
+      commands::inspect_source,
+      commands::install_skill,
       commands::pick_folder,
       commands::list_projects,
       commands::add_project,

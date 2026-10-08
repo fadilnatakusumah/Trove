@@ -46,7 +46,7 @@ export function ProjectsPage() {
   const data = projects.data;
 
   return (
-    <main className="flex flex-1 flex-col gap-4 p-6">
+    <main className="flex flex-1 flex-col gap-4 p-4 sm:p-6">
       <header className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>

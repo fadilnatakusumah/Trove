@@ -35,6 +35,13 @@ impl AgentProvider for CodexProvider {
         ))
     }
 
+    /// Skills-dir parent is `~` (always exists) — use Codex's own dir.
+    fn config_root(&self) -> Option<PathBuf> {
+        Some(crate::services::filesystem_service::resolve_home_relative(
+            "~/.codex",
+        ))
+    }
+
     fn project_skills_dirs(&self, project: &Path) -> Vec<PathBuf> {
         vec![project.join(".agents").join("skills")]
     }

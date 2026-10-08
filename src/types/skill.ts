@@ -4,11 +4,21 @@
  * Changes must be applied to both sides; the Rust contract tests pin the JSON.
  */
 
-export type ProviderId = "claude" | "cursor" | "codex";
+export type ProviderId = "claude" | "cursor" | "codex" | "opencode";
 
 export type SkillSource =
   | { type: "local"; path: string }
-  | { type: "git"; url: string; ref?: string };
+  | {
+      type: "git";
+      url: string;
+      ref?: string;
+      /**
+       * Subdirectory inside the repository holding the skill(s). Derived from
+       * pasted file/tree links (e.g. GitHub `blob/<ref>/<path>/SKILL.md`);
+       * omitted means the repository root.
+       */
+      subpath?: string;
+    };
 
 export type SkillScope =
   | { type: "global" }

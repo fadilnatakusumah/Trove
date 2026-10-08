@@ -80,6 +80,47 @@ pub async fn list_skill_files(
 }
 
 // ---------------------------------------------------------------------------
+// Installation (plan 06)
+// ---------------------------------------------------------------------------
+
+/// Inspect a source (git URL or local folder) without installing: returns the
+/// discovered skill(s) for the install dialog (§19 pre-flight check).
+#[tauri::command]
+pub async fn inspect_source(
+    source: crate::models::SkillSource,
+) -> Result<crate::services::install_service::SourceInspection, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let staged = crate::services::install_service::stage_source(&source)?;
+        Ok(staged.inspection().clone())
+    })
+    .await
+    .map_err(|e| AppError::new(ErrorCode::InstallFailed).with_detail(e.to_string()))?
+}
+
+/// Install selected skill directories from a staged source.
+#[tauri::command]
+pub async fn install_skill(
+    source: crate::models::SkillSource,
+    provider_id: crate::models::ProviderId,
+    scope: crate::models::SkillScope,
+    skill_dirs: Vec<String>,
+) -> Result<Vec<crate::models::Skill>, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let provider = crate::providers::provider_by_id(provider_id)?;
+        let staged = crate::services::install_service::stage_source(&source)?;
+        crate::services::install_service::install_skills(
+            provider.as_ref(),
+            &source,
+            &staged,
+            &skill_dirs,
+            &scope,
+        )
+    })
+    .await
+    .map_err(|e| AppError::new(ErrorCode::InstallFailed).with_detail(e.to_string()))?
+}
+
+// ---------------------------------------------------------------------------
 // Projects (plan 05)
 // ---------------------------------------------------------------------------
 

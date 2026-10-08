@@ -15,7 +15,7 @@ export function ProvidersPage() {
   const detectedCount = data.filter((p) => p.detected).length;
 
   return (
-    <main className="flex flex-1 flex-col gap-4 p-6">
+    <main className="flex flex-1 flex-col gap-4 p-4 sm:p-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Providers</h1>
         <p className="text-sm text-muted-foreground">

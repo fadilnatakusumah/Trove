@@ -97,6 +97,7 @@ pub fn detect_project_providers(project: &str) -> Vec<ProviderId> {
             ],
         ),
         (ProviderId::Codex, vec![root.join(".agents").join("skills")]),
+        (ProviderId::Opencode, vec![root.join(".opencode").join("skills")]),
     ] {
         if dirs.iter().any(|d| d.is_dir()) && !found.contains(&id) {
             found.push(id);

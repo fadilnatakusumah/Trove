@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { InstallDialog } from "@/features/skills/InstallDialog";
 import {
   Select,
   SelectContent,
@@ -42,6 +44,7 @@ export function SkillsPage() {
   const [providerFilter, setProviderFilter] = useState<ProviderFilter>("all");
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [installOpen, setInstallOpen] = useState(false);
 
   const combos = useMemo<Combo[]>(() => {
     const ps =
@@ -79,12 +82,15 @@ export function SkillsPage() {
   const loading = isPending || providers.isPending || projects.isPending;
 
   return (
-    <main className="flex flex-1 flex-col gap-4 p-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Skills</h1>
-        <p className="text-sm text-muted-foreground">
-          {loading ? "Loading…" : `${filtered.length} skill${filtered.length === 1 ? "" : "s"}`}
-        </p>
+    <main className="flex flex-1 flex-col gap-4 p-4 sm:p-6">
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold tracking-tight">Skills</h1>
+          <p className="text-sm text-muted-foreground">
+            {loading ? "Loading…" : `${filtered.length} skill${filtered.length === 1 ? "" : "s"}`}
+          </p>
+        </div>
+        <Button onClick={() => setInstallOpen(true)}>+ Install Skill</Button>
       </header>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -92,7 +98,7 @@ export function SkillsPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search skills…"
-          className="w-64"
+          className="w-full sm:w-64"
           aria-label="Search skills"
         />
         <Select value={providerFilter} onValueChange={(v) => setProviderFilter(v as ProviderFilter)}>
@@ -150,6 +156,8 @@ export function SkillsPage() {
           ))}
         </div>
       )}
+
+      <InstallDialog open={installOpen} onOpenChange={setInstallOpen} />
     </main>
   );
 }
@@ -163,17 +171,28 @@ function SkillRow({ skill }: { skill: Skill }) {
       : undefined;
 
   return (
-    <Link to={`/skills/${detailId}`} className="block outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-lg">
+    <Link
+      to={`/skills/${detailId}`}
+      className="block rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
       <Card className="transition-colors hover:bg-accent/50">
-        <CardContent className="flex items-center gap-3 py-3">
-          <EnabledDot enabled={skill.enabled} />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium">{skill.name}</p>
-            {skill.description ? (
-              <p className="truncate text-xs text-muted-foreground">{skill.description}</p>
-            ) : null}
+        {/* Stacks vertically in narrow windows so badges stay visible rather
+            than being hidden or overflowing. */}
+        <CardContent className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:gap-3">
+          <div className="flex min-w-0 flex-1 items-start gap-3">
+            <span className="mt-1.5 shrink-0">
+              <EnabledDot enabled={skill.enabled} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">{skill.name}</p>
+              {skill.description ? (
+                <p className="truncate text-xs text-muted-foreground">
+                  {skill.description}
+                </p>
+              ) : null}
+            </div>
           </div>
-          <div className="hidden shrink-0 items-center gap-1.5 sm:flex">
+          <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-1.5 pl-5 sm:pl-0">
             <ProviderBadge provider={skill.provider} />
             <ScopeBadge scope={skill.scope} />
             {scopeName ? (

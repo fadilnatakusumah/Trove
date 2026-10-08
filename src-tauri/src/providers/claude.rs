@@ -35,6 +35,14 @@ impl AgentProvider for ClaudeProvider {
         ))
     }
 
+    /// The skills dir's parent is `~`, which always exists — detection would
+    /// report "installed" on every machine. Use the agent's own dir.
+    fn config_root(&self) -> Option<PathBuf> {
+        Some(crate::services::filesystem_service::resolve_home_relative(
+            "~/.claude",
+        ))
+    }
+
     fn project_skills_dirs(&self, project: &Path) -> Vec<PathBuf> {
         vec![project.join(".claude").join("skills")]
     }

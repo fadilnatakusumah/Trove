@@ -14,6 +14,7 @@ pub enum ProviderId {
     Claude,
     Cursor,
     Codex,
+    Opencode,
 }
 
 impl ProviderId {
@@ -22,6 +23,7 @@ impl ProviderId {
             ProviderId::Claude => "claude",
             ProviderId::Cursor => "cursor",
             ProviderId::Codex => "codex",
+            ProviderId::Opencode => "opencode",
         }
     }
 }
@@ -44,6 +46,11 @@ pub enum SkillSource {
         /// Git ref (branch/tag/commit). `ref` is a Rust keyword, hence ref_.
         #[serde(rename = "ref")]
         ref_: Option<String>,
+        /// Subdirectory inside the repository holding the skill(s). Derived
+        /// from pasted file/tree links (e.g. GitHub `blob/<ref>/<path>`);
+        /// `None` means the repository root.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        subpath: Option<String>,
     },
 }
 
@@ -113,6 +120,7 @@ mod tests {
             source: SkillSource::Git {
                 url: "https://github.com/example/react-skill".to_string(),
                 ref_: Some("main".to_string()),
+                subpath: None,
             },
             provider: ProviderId::Claude,
             scope: SkillScope::Global,

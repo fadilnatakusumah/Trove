@@ -126,14 +126,22 @@ impl std::error::Error for AppError {}
 /// serializes into the InvokeError payload ({ code, message, detail }) the
 /// frontend expects — no manual conversion needed.
 
-impl From<std::io::Error> for AppError {
-    fn from(err: std::io::Error) -> Self {
+impl AppError {
+    /// Map an io::Error against a path into a structured AppError with a
+    /// human-readable message and the path as detail.
+    pub fn from_io(err: &std::io::Error, path: impl AsRef<std::path::Path>) -> Self {
         let code = match err.kind() {
             std::io::ErrorKind::PermissionDenied => ErrorCode::PermissionDenied,
             std::io::ErrorKind::NotFound => ErrorCode::SkillNotFound,
             _ => ErrorCode::InstallFailed,
         };
-        AppError::new(code).with_detail(err.to_string())
+        AppError::new(code).with_detail(format!("'{}': {err}", path.as_ref().display()))
+    }
+}
+
+impl From<std::io::Error> for AppError {
+    fn from(err: std::io::Error) -> Self {
+        Self::from_io(&err, std::path::Path::new("."))
     }
 }
 

@@ -190,14 +190,16 @@ fn nested_skills(
 }
 
 /// Display path with `~` for the home prefix; full path otherwise.
+/// Separators are normalized to `/` so Windows doesn't produce mixed
+/// paths like `~/.agents/skills\eslint-import-sort`.
 pub fn display_home_path(path: &Path) -> String {
     if let Some(home) = dirs::home_dir() {
         if let Ok(rel) = path.strip_prefix(&home) {
-            let rel = rel.to_string_lossy();
+            let rel = rel.to_string_lossy().replace('\\', "/");
             if !rel.is_empty() {
                 return format!("~/{rel}");
             }
         }
     }
-    path.to_string_lossy().into_owned()
+    path.to_string_lossy().replace('\\', "/")
 }

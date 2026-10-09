@@ -5,18 +5,8 @@
 import { Globe, FolderOpen } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { providerLabel } from "@/features/skills/skill-labels";
 import type { ProviderId, SkillScope } from "@/types/skill";
-
-const PROVIDER_LABEL: Record<ProviderId, string> = {
-  claude: "Claude Code",
-  cursor: "Cursor",
-  codex: "Codex",
-  opencode: "OpenCode",
-};
-
-export function providerLabel(id: ProviderId): string {
-  return PROVIDER_LABEL[id];
-}
 
 export function ProviderBadge({ provider }: { provider: ProviderId }) {
   return <Badge variant="outline">{providerLabel(provider)}</Badge>;

@@ -63,7 +63,9 @@ export function AppSidebar() {
                 return (
                   <SidebarMenuItem key={item.to}>
                     <SidebarMenuButton asChild isActive={active}>
-                      <Link to={item.to}>
+                      {/* aria-current is what actually announces the active
+                          page to a screen reader; `isActive` only styles it. */}
+                      <Link to={item.to} aria-current={active ? "page" : undefined}>
                         <item.icon />
                         <span>{item.title}</span>
                       </Link>

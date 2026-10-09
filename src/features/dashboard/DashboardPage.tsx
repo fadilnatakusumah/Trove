@@ -6,7 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useProviders } from "@/features/providers/queries";
 import { useAllSkills, type Combo } from "@/features/skills/useAllSkills";
 import { listProjects } from "@/features/projects/projects";
-import { providerLabel } from "@/features/skills/skill-badges";
+import { providerLabel } from "@/features/skills/skill-labels";
+import { errorDetail } from "@/features/skills/install";
+import { ErrorState } from "@/features/states";
 import type { ProviderId, SkillScope } from "@/types/skill";
 
 /**
@@ -44,6 +46,26 @@ export function DashboardPage() {
   }, [skills]);
 
   const loading = providers.isPending || projects.isPending || skillsPending;
+
+  // A failed query is NOT an empty result. Reporting "no agents detected"
+  // when detection itself failed would send the user hunting for a problem
+  // that isn't there (§8.1).
+  const failure = providers.isError
+    ? providers.error
+    : projects.isError
+      ? projects.error
+      : null;
+
+  if (failure) {
+    return (
+      <main className="flex flex-1 flex-col gap-4 p-4 sm:p-6">
+        <header>
+          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+        </header>
+        <ErrorState message={errorDetail(failure)} />
+      </main>
+    );
+  }
 
   return (
     <main className="flex flex-1 flex-col gap-4 p-4 sm:p-6">

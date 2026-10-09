@@ -4,11 +4,49 @@
 //! to services, and return structured `AppError`s. No business logic here
 //! (tech-plan §24).
 
+use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::errors::{AppError, ErrorCode};
 use crate::services::filesystem_service as fs_service;
 use crate::services::git_service;
+
+/// Log a command failure once, at the IPC boundary (§31).
+///
+/// Errors already carry a machine code plus human copy, and nothing sensitive
+/// is ever put in them (credentials are stripped before they reach a message),
+/// so this is a safe single choke point instead of scattered logging.
+fn logged<T>(what: &str, result: Result<T, AppError>) -> Result<T, AppError> {
+    if let Err(e) = &result {
+        log::error!("{what} failed: {:?} — {}", e.code, e.message);
+    }
+    result
+}
+
+/// Reveal the application log directory in the OS file manager (§31).
+/// Returns the path so the UI can show the user where their logs live.
+#[tauri::command]
+pub async fn open_logs(app: tauri::AppHandle) -> Result<String, AppError> {
+    let dir = app.path().app_log_dir().map_err(|e| {
+        AppError::new(ErrorCode::PermissionDenied).with_detail(e.to_string())
+    })?;
+    if !dir.is_dir() {
+        // Not an error state worth alarming the user with — just nothing yet.
+        return Err(AppError::new(ErrorCode::SkillNotFound).with_detail(format!(
+            "no logs have been written yet at '{}'",
+            dir.display()
+        )));
+    }
+    let shown = dir.to_string_lossy().into_owned();
+    app.opener()
+        .open_path(shown.clone(), None::<&str>)
+        .map_err(|e| {
+            AppError::new(ErrorCode::PermissionDenied)
+                .with_detail(format!("failed to open '{shown}': {e}"))
+        })?;
+    log::info!("opened log directory {shown}");
+    Ok(shown)
+}
 
 /// Opens a skill/project directory with the OS file manager
 /// (Finder/Explorer/xdg-open, tech-plan §29). Only *reveals* — never executes.
@@ -22,6 +60,7 @@ pub async fn open_folder(
         return Err(AppError::new(ErrorCode::SkillNotFound)
             .with_detail(format!("'{}' is not a directory", resolved.display())));
     }
+    log::info!("opening folder {}", resolved.display());
     app.opener()
         .open_path(resolved.to_string_lossy().into_owned(), None::<&str>)
         .map_err(|e| {
@@ -58,12 +97,15 @@ pub async fn get_skills(
     provider_id: crate::models::ProviderId,
     scope: crate::models::SkillScope,
 ) -> Result<Vec<crate::models::Skill>, AppError> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let provider = crate::providers::provider_by_id(provider_id)?;
-        crate::providers::skills_for_scope(provider.as_ref(), &scope)
-    })
-    .await
-    .map_err(|e| AppError::new(ErrorCode::InstallFailed).with_detail(e.to_string()))?
+    logged(
+        "load skills",
+        tauri::async_runtime::spawn_blocking(move || {
+            let provider = crate::providers::provider_by_id(provider_id)?;
+            crate::providers::skills_for_scope(provider.as_ref(), &scope)
+        })
+        .await
+        .map_err(|e| AppError::new(ErrorCode::InstallFailed).with_detail(e.to_string()))?,
+    )
 }
 
 /// Read-only file listing for the skill detail view (§14). The path must be a
@@ -109,20 +151,23 @@ pub async fn install_skill(
     skill_dirs: Vec<String>,
     replace: bool,
 ) -> Result<Vec<crate::models::Skill>, AppError> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let provider = crate::providers::provider_by_id(provider_id)?;
-        let staged = crate::services::install_service::stage_source(&source)?;
-        crate::services::install_service::install_skills(
-            provider.as_ref(),
-            &source,
-            &staged,
-            &skill_dirs,
-            &scope,
-            replace,
-        )
-    })
-    .await
-    .map_err(|e| AppError::new(ErrorCode::InstallFailed).with_detail(e.to_string()))?
+    logged(
+        "install skill",
+        tauri::async_runtime::spawn_blocking(move || {
+            let provider = crate::providers::provider_by_id(provider_id)?;
+            let staged = crate::services::install_service::stage_source(&source)?;
+            crate::services::install_service::install_skills(
+                provider.as_ref(),
+                &source,
+                &staged,
+                &skill_dirs,
+                &scope,
+                replace,
+            )
+        })
+        .await
+        .map_err(|e| AppError::new(ErrorCode::InstallFailed).with_detail(e.to_string()))?,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -138,16 +183,19 @@ pub async fn set_skill_enabled(
     scope: crate::models::SkillScope,
     enabled: bool,
 ) -> Result<(), AppError> {
-    tauri::async_runtime::spawn_blocking(move || {
-        crate::services::lifecycle_service::set_skill_enabled(
-            provider_id,
-            &skill_id,
-            &scope,
-            enabled,
-        )
-    })
-    .await
-    .map_err(|e| AppError::new(ErrorCode::InstallFailed).with_detail(e.to_string()))?
+    logged(
+        "toggle skill",
+        tauri::async_runtime::spawn_blocking(move || {
+            crate::services::lifecycle_service::set_skill_enabled(
+                provider_id,
+                &skill_id,
+                &scope,
+                enabled,
+            )
+        })
+        .await
+        .map_err(|e| AppError::new(ErrorCode::InstallFailed).with_detail(e.to_string()))?,
+    )
 }
 
 /// Remove a skill. Moves the directory to the OS trash unless `permanent`,
@@ -159,16 +207,19 @@ pub async fn uninstall_skill(
     scope: crate::models::SkillScope,
     permanent: bool,
 ) -> Result<(), AppError> {
-    tauri::async_runtime::spawn_blocking(move || {
-        crate::services::lifecycle_service::uninstall_skill(
-            provider_id,
-            &skill_id,
-            &scope,
-            permanent,
-        )
-    })
-    .await
-    .map_err(|e| AppError::new(ErrorCode::InstallFailed).with_detail(e.to_string()))?
+    logged(
+        "uninstall skill",
+        tauri::async_runtime::spawn_blocking(move || {
+            crate::services::lifecycle_service::uninstall_skill(
+                provider_id,
+                &skill_id,
+                &scope,
+                permanent,
+            )
+        })
+        .await
+        .map_err(|e| AppError::new(ErrorCode::InstallFailed).with_detail(e.to_string()))?,
+    )
 }
 
 // ---------------------------------------------------------------------------

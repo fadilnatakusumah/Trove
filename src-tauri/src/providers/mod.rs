@@ -108,10 +108,21 @@ pub fn detect_all() -> Vec<ProviderDetectionResult> {
         .into_iter()
         .map(|p| {
             let global = p.global_skills_dir();
+            let detected = p.config_root().as_ref().is_some_and(|d| d.is_dir());
+            if detected {
+                log::info!(
+                    "detected {} provider at {}",
+                    p.name(),
+                    global
+                        .as_ref()
+                        .map(|d| display_home_path(d))
+                        .unwrap_or_else(|| "(no skills dir)".to_string())
+                );
+            }
             ProviderDetectionResult {
                 provider_id: p.id(),
                 name: p.name(),
-                detected: p.config_root().as_ref().is_some_and(|d| d.is_dir()),
+                detected,
                 global_skills_dir: global.as_ref().map(|d| display_home_path(d)),
             }
         })
@@ -155,6 +166,17 @@ pub fn skills_for_scope(
         }
     }
     skills.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    log::info!(
+        "loaded {} skill(s) for {} ({})",
+        skills.len(),
+        provider.name(),
+        match scope {
+            SkillScope::Global => "global".to_string(),
+            SkillScope::Project { project_path } => {
+                format!("project {project_path}")
+            }
+        }
+    );
     Ok(skills)
 }
 

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { addProject, listProjects, pickFolder, removeProject, type RegisteredProject } from "@/features/projects/projects";
+import { errorDetail } from "@/features/skills/install";
 import { ErrorState, EmptyState, LoadingState } from "@/features/states";
 
 const projectsKey = ["projects"] as const;
@@ -27,7 +28,9 @@ export function ProjectsPage() {
       }
       void invalidate();
     },
-    onError: (e) => toast.error(e.message),
+    // `errorDetail` includes the structured detail, so a failure says why
+    // (e.g. the folder is gone) instead of just that it failed (§8.1).
+    onError: (e) => toast.error("Could not add that project", { description: errorDetail(e) }),
   });
 
   const remove = useMutation({
@@ -36,12 +39,12 @@ export function ProjectsPage() {
       toast.success("Project removed");
       void invalidate();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error("Could not remove that project", { description: errorDetail(e) }),
   });
 
   if (projects.isPending) return <LoadingState label="Loading projects…" />;
   if (projects.isError)
-    return <ErrorState message={projects.error?.message ?? "Failed to load projects"} />;
+    return <ErrorState message={errorDetail(projects.error)} />;
 
   const data = projects.data;
 

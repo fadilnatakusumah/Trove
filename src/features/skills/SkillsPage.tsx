@@ -22,8 +22,8 @@ import {
   EnabledDot,
   ProviderBadge,
   ScopeBadge,
-  providerLabel,
 } from "@/features/skills/skill-badges";
+import { providerLabel } from "@/features/skills/skill-labels";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState, ErrorState, LoadingState } from "@/features/states";
 import type { ProviderId, Skill } from "@/types/skill";

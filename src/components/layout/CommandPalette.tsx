@@ -25,7 +25,7 @@ import {
 import { useProviders } from "@/features/providers/queries";
 import { useAllSkills } from "@/features/skills/useAllSkills";
 import { listProjects } from "@/features/projects/projects";
-import { providerLabel } from "@/features/skills/skill-badges";
+import { providerLabel } from "@/features/skills/skill-labels";
 import type { SkillScope } from "@/types/skill";
 
 const ROUTES = [

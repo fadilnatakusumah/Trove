@@ -19,4 +19,16 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  {
+    // Files produced by the shadcn/ui CLI. They export `cva` variant maps next
+    // to their components (which the Fast Refresh rule flags) and the sidebar
+    // block's media-query hook initialises state inside an effect. Hand-editing
+    // them would be reverted the next time `shadcn add` regenerates a file, so
+    // the rules are relaxed here instead. Our own code stays strict.
+    files: ['src/components/ui/**/*.{ts,tsx}', 'src/hooks/use-mobile.ts'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+      'react-hooks/set-state-in-effect': 'off',
+    },
+  },
 ])

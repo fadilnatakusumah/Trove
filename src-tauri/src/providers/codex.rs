@@ -45,10 +45,6 @@ impl AgentProvider for CodexProvider {
     fn project_skills_dirs(&self, project: &Path) -> Vec<PathBuf> {
         vec![project.join(".agents").join("skills")]
     }
-
-    fn supports_disable(&self) -> bool {
-        true
-    }
 }
 
 #[cfg(test)]
@@ -66,10 +62,5 @@ mod tests {
         let dirs = CodexProvider.project_skills_dirs(Path::new("/tmp/proj"));
         assert_eq!(dirs.len(), 1);
         assert!(dirs[0].ends_with(".agents/skills") || dirs[0].ends_with(".agents\\skills"));
-    }
-
-    #[test]
-    fn codex_supports_disable() {
-        assert!(CodexProvider.supports_disable());
     }
 }

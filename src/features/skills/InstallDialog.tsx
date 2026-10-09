@@ -12,6 +12,7 @@ import { CheckCircle2, FolderOpen, Globe, FolderGit2, Loader2 } from "lucide-rea
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/features/skills/ConfirmDialog";
 import {
   Dialog,
   DialogContent,
@@ -38,6 +39,7 @@ import {
   type DiscoveredSkill,
   type SourceInspection,
 } from "@/features/skills/install";
+import { isAppError } from "@/types/error";
 import type { ProviderId, SkillScope, SkillSource } from "@/types/skill";
 
 export function InstallDialog({
@@ -58,6 +60,8 @@ export function InstallDialog({
   const [projectPath, setProjectPath] = useState<string>("");
   const [inspection, setInspection] = useState<SourceInspection | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // A refused install, held so the user can choose to replace and retry.
+  const [conflict, setConflict] = useState<string | null>(null);
 
   // Offer EVERY supported provider, not just detected ones: installing into
   // an agent for the first time is exactly when its skills dir doesn't exist
@@ -89,6 +93,7 @@ export function InstallDialog({
   const reset = () => {
     setInspection(null);
     setSelected(new Set());
+    setConflict(null);
   };
 
   // Every close path (success, Cancel, Escape, backdrop, X) routes through
@@ -121,7 +126,9 @@ export function InstallDialog({
   });
 
   const install = useMutation({
-    mutationFn: async () => {
+    // `replace` arrives from the conflict confirmation below; it is never
+    // inferred, so an overwrite can only happen because the user asked.
+    mutationFn: async (replace: boolean) => {
       if (!source || !scope || !effectiveProvider || !inspection) {
         throw new Error("Complete the install options first");
       }
@@ -134,9 +141,10 @@ export function InstallDialog({
         providerId: effectiveProvider,
         scope,
         skillDirs: chosen,
+        replace,
       });
     },
-    onSuccess: (installed) => {
+    onSuccess: (installed, replace) => {
       // Refresh the skills matrix so the new skill appears (§26), then close.
       void queryClient.invalidateQueries({ queryKey: ["skills-all"] });
       void queryClient.invalidateQueries({ queryKey: ["providers"] });
@@ -149,12 +157,25 @@ export function InstallDialog({
             installed.length === 1
               ? `“${installed[0].name}” was installed ${where}.`
               : `${installed.length} skills were installed ${where}.`,
-          icon: <CheckCircle2 className="size-4 text-emerald-500" />,
+          // Replacing trashed whatever was there, so say it plainly.
+          icon: replace ? undefined : (
+            <CheckCircle2 className="size-4 text-emerald-500" />
+          ),
         },
       );
+      if (replace) {
+        toast.info("The previous contents were moved to the trash");
+      }
+      setConflict(null);
       close();
     },
     onError: (e) => {
+      // A CONFLICT is resolvable here, so offer the choice instead of a dead
+      // end. Everything else stays a plain error toast.
+      if (isAppError(e) && e.code === "CONFLICT") {
+        setConflict(e.detail ? `${e.message} ${e.detail}` : e.message);
+        return;
+      }
       toast.error("Installation failed", { description: errorDetail(e) });
     },
   });
@@ -331,7 +352,7 @@ export function InstallDialog({
             </Button>
           ) : (
             <Button
-              onClick={() => install.mutate()}
+              onClick={() => install.mutate(false)}
               disabled={
                 busy || selected.size === 0 || !scope || !effectiveProvider
               }
@@ -347,6 +368,24 @@ export function InstallDialog({
           )}
         </DialogFooter>
       </DialogContent>
+
+      {/* The destination is occupied. Installing over it moves the existing
+          contents to the trash, so it needs an explicit choice — never a
+          silent overwrite (Rule 14). */}
+      {conflict ? (
+        <ConfirmDialog
+          open
+          onOpenChange={(next) => {
+            if (!next) setConflict(null);
+          }}
+          title="That name is already taken"
+          description="Installing here moves whatever is currently in this folder to your system trash, then installs the skill. You can restore the old contents from the trash."
+          detail={conflict}
+          confirmLabel="Move aside and install"
+          busy={installing}
+          onConfirm={() => install.mutate(true)}
+        />
+      ) : null}
     </Dialog>
   );
 }

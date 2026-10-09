@@ -12,7 +12,6 @@ export interface ProviderDetection {
   name: string;
   detected: boolean;
   globalSkillsDir?: string;
-  supportsDisable: boolean;
 }
 
 export const queryKeys = {

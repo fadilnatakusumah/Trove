@@ -1,6 +1,6 @@
-import { useMemo } from "react";
-import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, FolderOpen } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { ArrowLeft, FolderOpen, Power, Trash2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { UninstallDialog } from "@/features/skills/UninstallDialog";
+import { useSkillToggle } from "@/features/skills/lifecycle";
 import { useProviders } from "@/features/providers/queries";
 import { useAllSkills, type Combo } from "@/features/skills/useAllSkills";
 import { listProjects } from "@/features/projects/projects";
@@ -18,6 +20,7 @@ import {
 } from "@/features/skills/skill-badges";
 import { EmptyState, LoadingState } from "@/features/states";
 import { invokeCommand } from "@/lib/tauri";
+import type { Skill } from "@/types/skill";
 
 interface DirEntry {
   name: string;
@@ -67,33 +70,7 @@ export function SkillDetailPage() {
   return (
     <main className="flex flex-1 flex-col gap-4 p-4 sm:p-6">
       <BackLink />
-
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <EnabledDot enabled={skill.enabled} />
-            <h1 className="truncate text-2xl font-semibold tracking-tight">
-              {skill.name}
-            </h1>
-          </div>
-          {skill.description ? (
-            <p className="mt-1 text-sm text-muted-foreground">{skill.description}</p>
-          ) : null}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {/* Lifecycle actions (enable/disable/uninstall) land in plan 07. */}
-          <Button
-            variant="outline"
-            onClick={() => {
-              invokeCommand("open_folder", { path: skill.path })
-                .then(() => toast.success("Opened in file manager"))
-                .catch((e: Error) => toast.error(e.message));
-            }}
-          >
-            <FolderOpen /> Open Folder
-          </Button>
-        </div>
-      </header>
+      <SkillHeader skill={skill} />
 
       <Card>
         <CardHeader className="pb-2">
@@ -141,6 +118,67 @@ export function SkillDetailPage() {
         </CardContent>
       </Card>
     </main>
+  );
+}
+
+/**
+ * Header with lifecycle actions (plan 07 §7.3): enable/disable toggle and
+ * uninstall. The mutations live in `lifecycle.ts` so this view and the list
+ * row behave identically; both invalidate the skills matrix on success (§26)
+ * rather than editing the cache by hand.
+ */
+function SkillHeader({ skill }: { skill: Skill }) {
+  const navigate = useNavigate();
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const toggle = useSkillToggle(skill);
+
+  return (
+    <header className="flex flex-wrap items-start justify-between gap-3">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <EnabledDot enabled={skill.enabled} />
+          <h1 className="truncate text-2xl font-semibold tracking-tight">
+            {skill.name}
+          </h1>
+        </div>
+        {skill.description ? (
+          <p className="mt-1 text-sm text-muted-foreground">{skill.description}</p>
+        ) : null}
+      </div>
+
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <Button
+          variant="outline"
+          onClick={() => toggle.mutate()}
+          disabled={toggle.isPending}
+        >
+          <Power />
+          {skill.enabled ? "Disable" : "Enable"}
+        </Button>
+        <Button
+          variant="outline"
+          onClick={() => {
+            invokeCommand("open_folder", { path: skill.path })
+              .then(() => toast.success("Opened in file manager"))
+              .catch((e: Error) => toast.error(e.message));
+          }}
+        >
+          <FolderOpen /> Open Folder
+        </Button>
+        <Button variant="destructive" onClick={() => setConfirmOpen(true)}>
+          <Trash2 /> Uninstall
+        </Button>
+      </div>
+
+      {confirmOpen ? (
+        <UninstallDialog
+          skill={skill}
+          onClose={() => setConfirmOpen(false)}
+          // The skill no longer exists, so the list is the only place left.
+          onRemoved={() => void navigate("/skills")}
+        />
+      ) : null}
+    </header>
   );
 }
 

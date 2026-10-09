@@ -98,12 +98,16 @@ pub async fn inspect_source(
 }
 
 /// Install selected skill directories from a staged source.
+///
+/// `replace` is false unless the user explicitly confirmed replacing an
+/// occupied destination; when false a conflict changes nothing (Rule 14).
 #[tauri::command]
 pub async fn install_skill(
     source: crate::models::SkillSource,
     provider_id: crate::models::ProviderId,
     scope: crate::models::SkillScope,
     skill_dirs: Vec<String>,
+    replace: bool,
 ) -> Result<Vec<crate::models::Skill>, AppError> {
     tauri::async_runtime::spawn_blocking(move || {
         let provider = crate::providers::provider_by_id(provider_id)?;
@@ -114,6 +118,53 @@ pub async fn install_skill(
             &staged,
             &skill_dirs,
             &scope,
+            replace,
+        )
+    })
+    .await
+    .map_err(|e| AppError::new(ErrorCode::InstallFailed).with_detail(e.to_string()))?
+}
+
+// ---------------------------------------------------------------------------
+// Lifecycle (plan 07)
+// ---------------------------------------------------------------------------
+
+/// Enable/disable a skill by renaming its `SKILL.md`. Agent-agnostic and
+/// lossless, so there is no provider that cannot be toggled (§20).
+#[tauri::command]
+pub async fn set_skill_enabled(
+    provider_id: crate::models::ProviderId,
+    skill_id: String,
+    scope: crate::models::SkillScope,
+    enabled: bool,
+) -> Result<(), AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::services::lifecycle_service::set_skill_enabled(
+            provider_id,
+            &skill_id,
+            &scope,
+            enabled,
+        )
+    })
+    .await
+    .map_err(|e| AppError::new(ErrorCode::InstallFailed).with_detail(e.to_string()))?
+}
+
+/// Remove a skill. Moves the directory to the OS trash unless `permanent`,
+/// which the UI only sets after explicit confirmation (§21).
+#[tauri::command]
+pub async fn uninstall_skill(
+    provider_id: crate::models::ProviderId,
+    skill_id: String,
+    scope: crate::models::SkillScope,
+    permanent: bool,
+) -> Result<(), AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::services::lifecycle_service::uninstall_skill(
+            provider_id,
+            &skill_id,
+            &scope,
+            permanent,
         )
     })
     .await

@@ -205,6 +205,16 @@ pub fn move_to_trash(path: &Path) -> Result<(), AppError> {
     })
 }
 
+/// Rename `from` to `to`, guarding both ends against `root`.
+///
+/// Enable/disable uses this, where both paths are siblings inside one skill
+/// directory — the guard keeps that a property of the code, not an assumption.
+pub fn rename_checked(root: &Path, from: &Path, to: &Path) -> Result<(), AppError> {
+    ensure_within(root, from)?;
+    ensure_within(root, to)?;
+    fs::rename(from, to).map_err(|e| io_to_app_error(&e, from))
+}
+
 /// Permanently delete a directory tree. Only for explicit user-confirmed
 /// actions on paths that already passed [`ensure_within`].
 pub fn delete_dir_permanent(path: &Path) -> Result<(), AppError> {

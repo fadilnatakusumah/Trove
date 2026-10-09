@@ -42,11 +42,6 @@ export function ProvidersPage() {
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground">
               <p className="font-mono text-xs">{p.globalSkillsDir}</p>
-              <p className="mt-1 text-xs">
-                {p.supportsDisable
-                  ? "Enable/disable supported"
-                  : "Disable is not supported for this provider"}
-              </p>
             </CardContent>
           </Card>
         ))}

@@ -43,10 +43,6 @@ impl AgentProvider for OpencodeProvider {
     fn project_skills_dirs(&self, project: &Path) -> Vec<PathBuf> {
         vec![project.join(".opencode").join("skills")]
     }
-
-    fn supports_disable(&self) -> bool {
-        false
-    }
 }
 
 #[cfg(test)]
@@ -72,10 +68,5 @@ mod tests {
         assert!(
             dirs[0].ends_with(".opencode/skills") || dirs[0].ends_with(".opencode\\skills")
         );
-    }
-
-    #[test]
-    fn disable_is_unsupported_honestly() {
-        assert!(!OpencodeProvider.supports_disable());
     }
 }

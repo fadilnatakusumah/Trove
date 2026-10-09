@@ -22,7 +22,7 @@ use serde::Serialize;
 
 use crate::errors::{AppError, ErrorCode};
 use crate::models::{Skill, SkillScope, SkillSource};
-use crate::providers::AgentProvider;
+use crate::providers::{is_skill_dir, AgentProvider, SKILL_FILE};
 use crate::services::filesystem_service as fs;
 use crate::services::skill_service::parse_frontmatter;
 
@@ -439,12 +439,17 @@ fn discover_skill(root: &Path, dir: &Path) -> Result<DiscoveredSkill, AppError> 
 /// `skill_dirs` selects which discovered directories to install (root layout
 /// passes one, collections pass the user's selection). Conflicts are checked
 /// per-skill: one conflicting skill doesn't block the others (plan 06 §6.3).
+///
+/// `replace` is set only from an explicit confirmation in the UI. When false
+/// (the default) an occupied destination is a `CONFLICT` and nothing is
+/// touched (Rule 14 — never silently overwrite).
 pub fn install_skills(
     provider: &dyn AgentProvider,
     source: &SkillSource,
     staged: &StagedSource,
     skill_dirs: &[String],
     scope: &SkillScope,
+    replace: bool,
 ) -> Result<Vec<Skill>, AppError> {
     let dest_root = match scope {
         SkillScope::Global => provider
@@ -498,19 +503,57 @@ pub fn install_skills(
             .ok_or_else(|| {
                 AppError::new(ErrorCode::InvalidSkill).with_detail(format!("bad dir '{rel}'"))
             })?;
-        // Rule 14: the destination must not exist. Fail policy — the UI
-        // resolves conflicts explicitly per skill before calling again.
+        // Rule 14: never silently overwrite. Replacing is only allowed on an
+        // explicit, confirmed instruction from the user.
         let dest = dest_root.join(&id);
-        fs::copy_dir_checked(&src, &dest, &dest_root, fs::OverwritePolicy::Fail)?;
+        if dest.exists() && !replace {
+            return Err(conflict_error(&dest, &id));
+        }
+        let policy = if replace {
+            // Trashes the occupant first (§21), so a replacement is still
+            // recoverable even when the thing being replaced wasn't a skill.
+            fs::OverwritePolicy::BackupAndReplace
+        } else {
+            fs::OverwritePolicy::Fail
+        };
+        fs::copy_dir_checked(&src, &dest, &dest_root, policy)?;
 
         installed.push(build_installed_skill(provider, &dest, scope, source));
     }
     Ok(installed)
 }
 
+/// The conflict the user actually has: the destination directory is occupied
+/// but holds no skill.
+///
+/// The default `CONFLICT` copy says "a skill with this name already exists",
+/// which is a lie when discovery lists that directory as containing no skill.
+/// Saying so is the only way the user can act on it.
+fn conflict_error(dest: &Path, id: &str) -> AppError {
+    let detail = if is_skill_dir(dest) {
+        format!(
+            "a skill named '{id}' is already installed at '{}'",
+            dest.display()
+        )
+    } else {
+        format!(
+            "'{}' already exists but does not contain a {SKILL_FILE} — it may be a \
+             manual clone, a plugin, or leftover files from another tool",
+            dest.display()
+        )
+    };
+
+    let mut err = AppError::new(ErrorCode::Conflict).with_detail(detail);
+    err.message = if is_skill_dir(dest) {
+        ErrorCode::Conflict.default_message().to_string()
+    } else {
+        format!("'{id}' already exists here, but it is not a skill.")
+    };
+    err
+}
+
 /// Build the returned `Skill` for a freshly installed directory.
-fn build_installed_skill(
-    provider: &dyn AgentProvider,
+fn build_installed_skill(    provider: &dyn AgentProvider,
     dest: &Path,
     scope: &SkillScope,
     source: &SkillSource,
@@ -679,6 +722,7 @@ mod tests {
             &staged,
             &dirs,
             &SkillScope::Project { project_path },
+            false,
         )
         .unwrap();
 
@@ -720,6 +764,7 @@ mod tests {
             &staged,
             &dirs,
             &SkillScope::Project { project_path },
+            false,
         )
         .unwrap_err();
 

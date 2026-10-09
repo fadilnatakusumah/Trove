@@ -1,9 +1,12 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { Power, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { InstallDialog } from "@/features/skills/InstallDialog";
+import { UninstallDialog } from "@/features/skills/UninstallDialog";
+import { useSkillToggle } from "@/features/skills/lifecycle";
 import {
   Select,
   SelectContent,
@@ -45,6 +48,8 @@ export function SkillsPage() {
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [installOpen, setInstallOpen] = useState(false);
+  // The skill awaiting uninstall confirmation, if any.
+  const [pendingRemoval, setPendingRemoval] = useState<Skill | null>(null);
 
   const combos = useMemo<Combo[]>(() => {
     const ps =
@@ -152,33 +157,56 @@ export function SkillsPage() {
       ) : (
         <div className="grid gap-2">
           {filtered.map((skill) => (
-            <SkillRow key={`${skill.provider}-${skill.scope.type}-${skill.path}`} skill={skill} />
+            <SkillRow
+              key={`${skill.provider}-${skill.scope.type}-${skill.path}`}
+              skill={skill}
+              onUninstall={setPendingRemoval}
+            />
           ))}
         </div>
       )}
 
       <InstallDialog open={installOpen} onOpenChange={setInstallOpen} />
+
+      {/* Mounted only while a target is selected, so the mutation hook inside
+          is never called conditionally. */}
+      {pendingRemoval ? (
+        <UninstallDialog
+          skill={pendingRemoval}
+          onClose={() => setPendingRemoval(null)}
+        />
+      ) : null}
     </main>
   );
 }
 
-function SkillRow({ skill }: { skill: Skill }) {
+function SkillRow({
+  skill,
+  onUninstall,
+}: {
+  skill: Skill;
+  onUninstall: (skill: Skill) => void;
+}) {
   // Detail route key: path identifies the skill uniquely across providers/scopes.
   const detailId = encodeURIComponent(skill.path);
   const scopeName =
     skill.scope.type === "project"
       ? (skill.scope.projectPath.replace(/\\/g, "/").split("/").filter(Boolean).pop() ?? "Project")
       : undefined;
+  const toggle = useSkillToggle(skill);
 
   return (
-    <Link
-      to={`/skills/${detailId}`}
-      className="block rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <Card className="transition-colors hover:bg-accent/50">
-        {/* Stacks vertically in narrow windows so badges stay visible rather
-            than being hidden or overflowing. */}
-        <CardContent className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:gap-3">
+    <Card className="transition-colors hover:bg-accent/50">
+      {/* Stacks vertically in narrow windows so badges stay visible rather
+          than being hidden or overflowing. */}
+      <CardContent className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:gap-3">
+        {/* The link covers the content and the buttons sit beside it, never
+            inside it — nesting interactive elements is invalid HTML and
+            breaks keyboard navigation. */}
+        <Link
+          to={`/skills/${detailId}`}
+          className="flex min-w-0 flex-1 flex-col gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex-row sm:items-center sm:gap-3"
+        >
           <div className="flex min-w-0 flex-1 items-start gap-3">
             <span className="mt-1.5 shrink-0">
               <EnabledDot enabled={skill.enabled} />
@@ -202,8 +230,30 @@ function SkillRow({ skill }: { skill: Skill }) {
             ) : null}
             <span className="sr-only">{providerLabel(skill.provider)}</span>
           </div>
-        </CardContent>
-      </Card>
-    </Link>
+        </Link>
+
+        <div className="flex shrink-0 items-center gap-0.5 pl-5 sm:pl-0">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={skill.enabled ? `Disable ${skill.name}` : `Enable ${skill.name}`}
+            title={skill.enabled ? "Disable" : "Enable"}
+            disabled={toggle.isPending}
+            onClick={() => toggle.mutate()}
+          >
+            <Power />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Uninstall ${skill.name}`}
+            title="Uninstall"
+            onClick={() => onUninstall(skill)}
+          >
+            <Trash2 />
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

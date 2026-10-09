@@ -45,6 +45,14 @@ export async function installSkills(args: {
   providerId: ProviderId;
   scope: SkillScope;
   skillDirs: string[];
+  /**
+   * Replace an occupied destination. Only ever true after the user confirmed
+   * it — the backend refuses to overwrite otherwise (Rule 14).
+   */
+  replace?: boolean;
 }): Promise<Skill[]> {
-  return invokeCommand<Skill[]>("install_skill", args);
+  return invokeCommand<Skill[]>("install_skill", {
+    ...args,
+    replace: args.replace ?? false,
+  });
 }

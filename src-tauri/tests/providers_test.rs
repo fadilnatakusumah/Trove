@@ -11,7 +11,7 @@ use app_lib::models::{ProviderId, SkillScope};
 use app_lib::providers::claude::ClaudeProvider;
 use app_lib::providers::codex::CodexProvider;
 use app_lib::providers::cursor::CursorProvider;
-use app_lib::providers::{self, AgentProvider};
+use app_lib::providers;
 
 /// Simulated HOME with the standard agent directories. Kept alive by the
 /// returned TempDir binding.
@@ -167,26 +167,47 @@ fn get_skills_global_scope_when_dir_missing_is_empty_ok() {
 }
 
 #[test]
-fn detection_reports_supported_flags() {
+fn detection_reports_every_provider_with_a_global_dir() {
     let results = providers::detect_all();
     // One result per registered provider — count with all_providers() so
     // adding a provider doesn't require editing this assertion.
     assert_eq!(results.len(), providers::all_providers().len());
-    let by_id = |id: ProviderId| {
-        results
-            .iter()
-            .find(|r| r.provider_id == id)
-            .expect("all providers reported")
-    };
-    assert!(!by_id(ProviderId::Claude).supports_disable);
-    assert!(!by_id(ProviderId::Cursor).supports_disable);
-    assert!(!by_id(ProviderId::Opencode).supports_disable);
-    assert!(by_id(ProviderId::Codex).supports_disable);
     // Global dir paths are always populated (display target), even when the
     // dir doesn't exist on this machine.
     for r in &results {
-        assert!(r.global_skills_dir.is_some());
+        assert!(r.global_skills_dir.is_some(), "{} has no global dir", r.name);
     }
+}
+
+/// Disabling renames `SKILL.md`, so discovery must still list the skill —
+/// otherwise the UI could never offer to enable it again.
+#[test]
+fn disabled_skill_is_still_listed_and_flagged() {
+    let fake = FakeHome::new();
+    let project = fake.home.join("repo");
+    let root = project.join(".claude").join("skills");
+    let dir = write_skill(&root, None, "parked", VALID_FM);
+    fs::rename(
+        dir.join("SKILL.md"),
+        dir.join(app_lib::providers::DISABLED_SKILL_FILE),
+    )
+    .unwrap();
+
+    let skills = providers::skills_for_scope(
+        &ClaudeProvider,
+        &SkillScope::Project {
+            project_path: project.to_string_lossy().into_owned(),
+        },
+    )
+    .unwrap();
+
+    let parked = skills
+        .iter()
+        .find(|s| s.id == "parked")
+        .expect("a disabled skill must still be listed");
+    assert!(!parked.enabled, "renamed SKILL.md means disabled");
+    // Name and description still come from the renamed file.
+    assert_eq!(parked.name, "react-expert");
 }
 
 #[test]

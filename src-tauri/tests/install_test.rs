@@ -5,6 +5,8 @@
 //! via the local path). Conflict, traversal, and selection behavior are all
 //! exercised against temp dirs.
 
+#![allow(non_snake_case)] // REGRESSION_* names are deliberate: greppable in CI.
+
 use std::fs;
 use std::path::Path;
 
@@ -51,6 +53,7 @@ fn happy_path_local_global_and_project() {
         &staged,
         &[".".to_string()],
         &SkillScope::Project { project_path: project.path().to_string_lossy().into_owned() },
+        false,
     )
     .unwrap();
 
@@ -99,6 +102,7 @@ fn REGRESSION_stale_staging_paths_do_not_break_install() {
         &SkillScope::Project {
             project_path: project.path().to_string_lossy().into_owned(),
         },
+        false,
     )
     .expect("install must resolve selected paths against its own staging");
 
@@ -152,6 +156,7 @@ fn collection_subset_selection_installs_only_selected() {
         &staged,
         &selected,
         &SkillScope::Project { project_path: project.path().to_string_lossy().into_owned() },
+        false,
     )
     .unwrap();
 
@@ -165,7 +170,7 @@ fn collection_subset_selection_installs_only_selected() {
 #[test]
 fn existing_skill_conflict_returns_conflict_without_overwrite() {
     let src = tempfile::TempDir::new().unwrap();
-    let dir = write_skill(src.path(), "clash", "new version");
+    let _dir = write_skill(src.path(), "clash", "new version");
 
     let staged = install_service::stage_source(&SkillSource::Local {
         path: src.path().to_string_lossy().into_owned(),
@@ -184,12 +189,92 @@ fn existing_skill_conflict_returns_conflict_without_overwrite() {
         // Discovered dirs are relative to the staged root.
         &["clash".to_string()],
         &SkillScope::Project { project_path: project.path().to_string_lossy().into_owned() },
+        false,
     )
     .unwrap_err();
 
     assert_eq!(err.code, app_lib::errors::ErrorCode::Conflict);
     let body = fs::read_to_string(existing.join("SKILL.md")).unwrap();
     assert!(body.contains("ORIGINAL"), "zero-overwrite guarantee (Rule 14)");
+}
+
+/// The reported bug: a destination occupied by a directory that holds no
+/// skill. Discovery lists no skill there, so "a skill with this name already
+/// exists" was a contradiction the user could see was false.
+#[test]
+fn conflict_on_non_skill_directory_explains_itself() {
+    let src = tempfile::TempDir::new().unwrap();
+    write_skill(src.path(), "frontend-design", "body");
+
+    let staged = install_service::stage_source(&SkillSource::Local {
+        path: src.path().to_string_lossy().into_owned(),
+    })
+    .unwrap();
+
+    let project = tempfile::TempDir::new().unwrap();
+    // A full repo clone dumped at the destination name — no SKILL.md at its
+    // root, so it is not a skill, exactly like a manual `git clone`.
+    let occupied = project.path().join(".claude/skills/frontend-design");
+    fs::create_dir_all(occupied.join("plugins")).unwrap();
+    fs::write(occupied.join("README.md"), "a repo, not a skill").unwrap();
+
+    let err = install_service::install_skills(
+        &ClaudeProvider,
+        &SkillSource::Local { path: src.path().to_string_lossy().into_owned() },
+        &staged,
+        &["frontend-design".to_string()],
+        &SkillScope::Project { project_path: project.path().to_string_lossy().into_owned() },
+        false,
+    )
+    .unwrap_err();
+
+    assert_eq!(err.code, app_lib::errors::ErrorCode::Conflict);
+    let detail = err.detail.unwrap_or_default();
+    assert!(
+        detail.contains("does not contain a SKILL.md"),
+        "must say the directory is not a skill, got: {detail}"
+    );
+    assert!(
+        !err.message.contains("already exists at the destination"),
+        "must not claim a skill exists there"
+    );
+    // Confirming without `replace` changed nothing (Rule 14).
+    assert!(occupied.join("README.md").exists());
+}
+
+/// `replace: true` (only ever set after explicit confirmation) swaps the
+/// occupant out, and trashes it rather than unlinking it.
+#[test]
+fn replace_confirmed_swaps_the_occupant_into_the_trash() {
+    let src = tempfile::TempDir::new().unwrap();
+    write_skill(src.path(), "frontend-design", "new body");
+
+    let staged = install_service::stage_source(&SkillSource::Local {
+        path: src.path().to_string_lossy().into_owned(),
+    })
+    .unwrap();
+
+    let project = tempfile::TempDir::new().unwrap();
+    let occupied = project.path().join(".claude/skills/frontend-design");
+    fs::create_dir_all(occupied.join("plugins")).unwrap();
+    fs::write(occupied.join("README.md"), "a repo, not a skill").unwrap();
+
+    let installed = install_service::install_skills(
+        &ClaudeProvider,
+        &SkillSource::Local { path: src.path().to_string_lossy().into_owned() },
+        &staged,
+        &["frontend-design".to_string()],
+        &SkillScope::Project { project_path: project.path().to_string_lossy().into_owned() },
+        true,
+    )
+    .unwrap();
+
+    assert_eq!(installed.len(), 1);
+    assert!(occupied.join("SKILL.md").is_file(), "skill is installed now");
+    assert!(
+        !occupied.join("README.md").exists(),
+        "the previous occupant is gone (moved to the trash, not unlinked)"
+    );
 }
 
 #[test]

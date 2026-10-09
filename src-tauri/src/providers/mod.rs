@@ -15,6 +15,30 @@ use std::path::{Path, PathBuf};
 use crate::errors::{AppError, ErrorCode};
 use crate::models::{ProviderId, Skill, SkillScope};
 
+/// The file that makes a directory a skill. The Agent Skills spec requires
+/// `SKILL.md` at the skill root, and every agent we support discovers skills
+/// by that exact filename.
+pub const SKILL_FILE: &str = "SKILL.md";
+
+/// A disabled skill's `SKILL.md`, renamed.
+///
+/// Because discovery is by exact filename, renaming takes the skill out of
+/// every agent's reach while leaving the directory and its supporting files
+/// untouched — so enabling it again is the exact inverse, and nothing is ever
+/// lost. Deliberately does not end in `.md` so a `*.md` sweep can't pick it up.
+pub const DISABLED_SKILL_FILE: &str = "SKILL.md.disabled";
+
+/// Is `dir` a skill directory — enabled or disabled?
+///
+/// The **single** definition of "a skill" in this codebase: discovery, the
+/// lifecycle service, and the installer all call it. When they each rolled
+/// their own check, the installer could insist "a skill with this name already
+/// exists" about a directory the Skills list simultaneously reported as not
+/// containing any skill.
+pub fn is_skill_dir(dir: &Path) -> bool {
+    dir.join(SKILL_FILE).is_file() || dir.join(DISABLED_SKILL_FILE).is_file()
+}
+
 /// Whether an agent installation was detected on this machine.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -25,12 +49,14 @@ pub struct ProviderDetectionResult {
     /// Global skills root, `~`-shortened for display. Present even when the
     /// dir doesn't exist yet (shows where skills *would* live).
     pub global_skills_dir: Option<String>,
-    /// True when the provider supports a real disable mechanism (§20).
-    pub supports_disable: bool,
 }
 
-/// A provider exposes skill locations and parses skills; it contains no UI
-/// concepts (Rule 5/6 boundary).
+/// A provider answers "where do this agent's skills live?" and nothing else.
+///
+/// Enable/disable and uninstall are deliberately NOT trait methods: they work
+/// identically for every agent (rename `SKILL.md`, or remove the directory),
+/// so they live in `lifecycle_service` as one implementation rather than four
+/// (Rule 5/6 boundary — providers hold no UI or lifecycle concepts).
 pub trait AgentProvider: Send + Sync {
     fn id(&self) -> ProviderId;
     fn name(&self) -> &'static str;
@@ -53,14 +79,6 @@ pub trait AgentProvider: Send + Sync {
     /// Project-level skills roots. A Vec because some agents honor multiple
     /// conventions (e.g. Cursor reads `.cursor/skills` and `.agents/skills`).
     fn project_skills_dirs(&self, project: &Path) -> Vec<PathBuf>;
-
-    /// Honest capability flag — the UI must not fake toggles (§20, Rule 15).
-    fn supports_disable(&self) -> bool;
-
-    /// Apply the enabled state (plan 07 consumes this). Default: unsupported.
-    fn set_enabled(&self, _skill: &Skill, _enabled: bool) -> Result<(), AppError> {
-        Err(AppError::new(ErrorCode::Unsupported))
-    }
 }
 
 /// All providers, in stable display order.
@@ -95,7 +113,6 @@ pub fn detect_all() -> Vec<ProviderDetectionResult> {
                 name: p.name(),
                 detected: p.config_root().as_ref().is_some_and(|d| d.is_dir()),
                 global_skills_dir: global.as_ref().map(|d| display_home_path(d)),
-                supports_disable: p.supports_disable(),
             }
         })
         .collect()
@@ -132,7 +149,7 @@ pub fn skills_for_scope(
             let skill_dir = dir.join(&entry.name);
             match parse_skill_dir(provider, &skill_dir, scope) {
                 Some(skill) => skills.push(skill),
-                // No SKILL.md here — look one level down for category folders.
+                // No skill file here — look one level down for category folders.
                 None => skills.extend(nested_skills(provider, &skill_dir, scope)),
             }
         }
@@ -141,16 +158,22 @@ pub fn skills_for_scope(
     Ok(skills)
 }
 
-/// Parse one skill directory. `None` when the dir has no readable SKILL.md.
+/// Parse one skill directory. `None` when it holds no skill file at all.
 pub fn parse_skill_dir(
     provider: &dyn AgentProvider,
     skill_dir: &Path,
     scope: &SkillScope,
 ) -> Option<Skill> {
-    let skill_md = skill_dir.join("SKILL.md");
-    if !skill_md.is_file() {
+    // An enabled skill has `SKILL.md`; a disabled one has it renamed. Reading
+    // the renamed file keeps a disabled skill listed — with its real name and
+    // description — so the UI can offer to enable it again (§16).
+    let (skill_md, enabled) = if skill_dir.join(SKILL_FILE).is_file() {
+        (skill_dir.join(SKILL_FILE), true)
+    } else if skill_dir.join(DISABLED_SKILL_FILE).is_file() {
+        (skill_dir.join(DISABLED_SKILL_FILE), false)
+    } else {
         return None;
-    }
+    };
     let content =
         crate::services::filesystem_service::read_text_file_capped(&skill_md).ok()?;
     let frontmatter = crate::services::skill_service::parse_frontmatter(&content)?;
@@ -182,9 +205,8 @@ pub fn parse_skill_dir(
         provider: provider.id(),
         scope: scope.clone(),
         path: display_home_path(skill_dir),
-        // Phase 1: present on disk = enabled. Provider-specific disable state
-        // lands in plan 07.
-        enabled: true,
+        // Enabled state IS on-disk state: `SKILL.md` present vs renamed (§16).
+        enabled,
         version: frontmatter.version,
         installed_at: None,
         metadata,

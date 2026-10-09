@@ -49,10 +49,6 @@ impl AgentProvider for CursorProvider {
             project.join(".agents").join("skills"),
         ]
     }
-
-    fn supports_disable(&self) -> bool {
-        false
-    }
 }
 
 #[cfg(test)]
@@ -71,10 +67,5 @@ mod tests {
         assert_eq!(dirs.len(), 2);
         assert!(dirs[0].ends_with(".cursor/skills") || dirs[0].ends_with(".cursor\\skills"));
         assert!(dirs[1].ends_with(".agents/skills") || dirs[1].ends_with(".agents\\skills"));
-    }
-
-    #[test]
-    fn disable_is_unsupported_honestly() {
-        assert!(!CursorProvider.supports_disable());
     }
 }

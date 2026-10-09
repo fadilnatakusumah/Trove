@@ -46,10 +46,6 @@ impl AgentProvider for ClaudeProvider {
     fn project_skills_dirs(&self, project: &Path) -> Vec<PathBuf> {
         vec![project.join(".claude").join("skills")]
     }
-
-    fn supports_disable(&self) -> bool {
-        false
-    }
 }
 
 #[cfg(test)]
@@ -71,10 +67,5 @@ mod tests {
             "got {}",
             dirs[0].display()
         );
-    }
-
-    #[test]
-    fn disable_is_unsupported_honestly() {
-        assert!(!ClaudeProvider.supports_disable());
     }
 }

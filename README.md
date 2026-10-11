@@ -103,6 +103,18 @@ Two invariants worth knowing before changing anything:
    Discovery, the lifecycle service, and the installer all call it, so they
    cannot disagree about what exists.
 
+And one rule for anything the user reads:
+
+3. **Never format a path with `.display()` or by hand.** Use
+   `filesystem_service::display_path`, which shortens the home directory to `~`
+   and normalizes separators. A raw `.display()` on Windows produces
+   `C:\Users\me\.config/opencode/skills\frontend-design` — backslashes from the
+   OS mixed with forward slashes from segments we joined ourselves. Paths are
+   *compared* and *sent* in their real form; `display_path` is for showing
+   only, and the frontend mirrors it with `formatPath()` from `src/lib/paths.ts`
+   (it cannot shorten `~` itself, so the backend sends `displayPath` where the
+   UI needs one).
+
 Every filesystem mutation goes through `filesystem_service`, which guards its
 target with `ensure_within` against an approved agent directory — a path or
 skill id that tries to escape is rejected before anything is touched.

@@ -24,6 +24,7 @@ import {
   ScopeBadge,
 } from "@/features/skills/skill-badges";
 import { providerLabel } from "@/features/skills/skill-labels";
+import { pathBasename } from "@/lib/paths";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState, ErrorState, LoadingState } from "@/features/states";
 import type { ProviderId, Skill } from "@/types/skill";
@@ -190,9 +191,7 @@ function SkillRow({
   // Detail route key: path identifies the skill uniquely across providers/scopes.
   const detailId = encodeURIComponent(skill.path);
   const scopeName =
-    skill.scope.type === "project"
-      ? (skill.scope.projectPath.replace(/\\/g, "/").split("/").filter(Boolean).pop() ?? "Project")
-      : undefined;
+    skill.scope.type === "project" ? pathBasename(skill.scope.projectPath) : undefined;
   const toggle = useSkillToggle(skill);
 
   return (

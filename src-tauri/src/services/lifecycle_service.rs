@@ -114,7 +114,7 @@ pub fn set_skill_enabled(
     let (_root, dir) = skill_dir(provider.as_ref(), skill_id, scope)?;
     if !dir.is_dir() {
         return Err(AppError::new(ErrorCode::SkillNotFound)
-            .with_detail(format!("'{}' does not exist", dir.display())));
+            .with_detail(format!("'{}' does not exist", fs::display_path(&dir))));
     }
 
     let live = dir.join(SKILL_FILE);
@@ -135,7 +135,7 @@ pub fn set_skill_enabled(
     if !from.is_file() {
         return Err(AppError::new(ErrorCode::SkillNotFound).with_detail(format!(
             "'{}' has no SKILL.md to rename",
-            dir.display()
+            fs::display_path(&dir)
         )));
     }
 
@@ -159,7 +159,7 @@ pub fn uninstall_skill(
 
     if !dir.is_dir() {
         return Err(AppError::new(ErrorCode::SkillNotFound)
-            .with_detail(format!("'{}' does not exist", dir.display())));
+            .with_detail(format!("'{}' does not exist", fs::display_path(&dir))));
     }
 
     if permanent {

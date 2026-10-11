@@ -16,7 +16,7 @@
 //! - Collection repo: one-level-deep `<dir>/SKILL.md` → user selects skills.
 //! - Deeper nesting is not scanned (documented ceiling, Rule 12).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
@@ -63,11 +63,30 @@ impl SourceInspection {
     }
 }
 
+/// What `inspect_source` hands the UI: the discovery result plus the handle
+/// that claims the staging it came from.
+///
+/// The handle is **opaque and server-issued**. The alternative — deriving a key
+/// from the request and comparing it on the install call — couples two
+/// languages to an exact wire format (`SkillSource` serializes `ref` as
+/// `null` in Rust and omits the key in JS), so it would silently break the day
+/// either side's serde settings changed. An id cannot drift that way.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StagedInspection {
+    pub staging_id: String,
+    pub inspection: SourceInspection,
+}
+
 /// A validated, ready-to-install source staged in a temp directory.
 /// The TempDir binding keeps the staging alive until this value is dropped.
 #[derive(Debug)]
 pub struct StagedSource {
     _temp: tempfile::TempDir,
+    /// The directory inside the staging that holds the skill(s). Differs from
+    /// `_temp.path()` when the source carried a subpath (a pasted GitHub
+    /// `tree`/`blob` link).
+    root: PathBuf,
     inspection: SourceInspection,
 }
 
@@ -78,11 +97,16 @@ impl StagedSource {
 
     /// Root of the staged copy. Install resolves relative skill paths here.
     pub fn root(&self) -> &Path {
-        self._temp.path()
+        &self.root
     }
 }
 
 /// Validate input and stage the source in a temp dir.
+///
+/// The staging is returned to the caller, which **must** keep it alive until
+/// the install completes. Staging again for the install step would be a second
+/// clone of the same source, and for a pasted link that also means re-parsing
+/// the URL — which resolves a subpath differently depending on the clone.
 pub fn stage_source(source: &SkillSource) -> Result<StagedSource, AppError> {
     let temp = tempfile::tempdir().map_err(|e| {
         AppError::new(ErrorCode::InstallFailed).with_detail(format!("temp dir: {e}"))
@@ -113,7 +137,7 @@ pub fn stage_source(source: &SkillSource) -> Result<StagedSource, AppError> {
             if !resolved.is_dir() {
                 return Err(AppError::new(ErrorCode::InvalidSkill).with_detail(format!(
                     "local folder '{}' does not exist",
-                    resolved.display()
+                    fs::display_path(&resolved)
                 )));
             }
             // Copy the source INTO the temp root (mirroring git clone's
@@ -125,7 +149,11 @@ pub fn stage_source(source: &SkillSource) -> Result<StagedSource, AppError> {
     };
 
     let inspection = inspect_staged(&staged_root)?;
-    Ok(StagedSource { _temp: temp, inspection })
+    Ok(StagedSource {
+        _temp: temp,
+        root: staged_root,
+        inspection,
+    })
 }
 
 /// Copy `src`'s entries into `dest` (dir contents merge, not the dir itself).
@@ -479,9 +507,8 @@ pub fn install_skills(
     let mut installed = Vec::new();
     for rel in skill_dirs {
         // `rel` is relative to the staged root and was produced by inspection.
-        // Inspection and install stage SEPARATELY (different temp dirs), so the
-        // path must be re-resolved against THIS staging — an absolute path from
-        // the inspection temp dir would already be gone.
+        // Resolve it against the SAME staging inspection used, so the paths the
+        // user reviewed are the paths that get copied.
         let candidate = if rel == "." {
             staged.root().to_path_buf()
         } else {
@@ -503,6 +530,15 @@ pub fn install_skills(
             .ok_or_else(|| {
                 AppError::new(ErrorCode::InvalidSkill).with_detail(format!("bad dir '{rel}'"))
             })?;
+        // The thing we are about to copy must itself be a skill. Without this,
+        // a staging mismatch would copy a whole repository (or an unrelated
+        // directory) into the skills dir and report success.
+        if !is_skill_dir(&src) {
+            return Err(AppError::new(ErrorCode::InvalidSkill).with_detail(format!(
+                "'{}' is not a skill directory — it has no {SKILL_FILE}",
+                fs::display_path(&src)
+            )));
+        }
         // Rule 14: never silently overwrite. Replacing is only allowed on an
         // explicit, confirmed instruction from the user.
         let dest = dest_root.join(&id);
@@ -517,6 +553,17 @@ pub fn install_skills(
             fs::OverwritePolicy::Fail
         };
         fs::copy_dir_checked(&src, &dest, &dest_root, policy)?;
+
+        // Confirm what actually landed. `copy_dir_checked` skips symlinks, and
+        // the destination could be left unusable by an interrupted copy —
+        // either way, reporting "installed" for a directory with no SKILL.md
+        // would be a success message the user cannot reconcile with reality.
+        if !dest.join(SKILL_FILE).is_file() {
+            return Err(AppError::new(ErrorCode::InstallFailed).with_detail(format!(
+                "the copy to '{}' did not produce a {SKILL_FILE}",
+                fs::display_path(&dest)
+            )));
+        }
 
         installed.push(build_installed_skill(provider, &dest, scope, source));
     }
@@ -533,13 +580,13 @@ fn conflict_error(dest: &Path, id: &str) -> AppError {
     let detail = if is_skill_dir(dest) {
         format!(
             "a skill named '{id}' is already installed at '{}'",
-            dest.display()
+            fs::display_path(dest)
         )
     } else {
         format!(
             "'{}' already exists but does not contain a {SKILL_FILE} — it may be a \
              manual clone, a plugin, or leftover files from another tool",
-            dest.display()
+            fs::display_path(dest)
         )
     };
 
@@ -553,7 +600,8 @@ fn conflict_error(dest: &Path, id: &str) -> AppError {
 }
 
 /// Build the returned `Skill` for a freshly installed directory.
-fn build_installed_skill(    provider: &dyn AgentProvider,
+fn build_installed_skill(
+    provider: &dyn AgentProvider,
     dest: &Path,
     scope: &SkillScope,
     source: &SkillSource,
@@ -562,7 +610,7 @@ fn build_installed_skill(    provider: &dyn AgentProvider,
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let fm = fs::read_text_file_capped(&dest.join("SKILL.md"))
+    let fm = fs::read_text_file_capped(&dest.join(SKILL_FILE))
         .ok()
         .and_then(|c| parse_frontmatter(&c));
 
@@ -574,8 +622,14 @@ fn build_installed_skill(    provider: &dyn AgentProvider,
     }
 
     Skill {
+        // Fall back to the directory name, never a placeholder: the id is what
+        // the user recognises, and "Skill" is not a name — it leaked straight
+        // into a toast as “Skill” was installed.
+        name: fm
+            .as_ref()
+            .and_then(|f| f.name.clone())
+            .unwrap_or_else(|| id.clone()),
         id,
-        name: fm.as_ref().and_then(|f| f.name.clone()).unwrap_or_else(|| "Skill".to_string()),
         description: fm.as_ref().and_then(|f| f.description.clone()),
         source: source.clone(),
         provider: provider.id(),
@@ -618,6 +672,7 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 }
 
 #[cfg(test)]
+#[allow(non_snake_case)] // REGRESSION_* names are deliberate: greppable in CI.
 mod tests {
     use super::*;
     use crate::providers::claude::ClaudeProvider;
@@ -632,6 +687,46 @@ mod tests {
         )
         .unwrap();
         dir
+    }
+
+    /// The staging handle must survive the wire as camelCase, and it must not
+    /// be a function of the source — see `StagedInspection`.
+    ///
+    /// This also pins the `ref` asymmetry that makes a content-derived key a
+    /// bad idea: Rust emits `"ref":null` where JS omits the key, so two
+    /// "equal" sources are not byte-equal across languages.
+    #[test]
+    fn staging_handle_is_opaque_and_independent_of_source_serialization() {
+        let inspection = SourceInspection::Single(DiscoveredSkill {
+            id: "frontend-design".to_string(),
+            name: Some("frontend-design".to_string()),
+            description: None,
+            dir: ".".to_string(),
+        });
+        let payload = StagedInspection {
+            staging_id: "staging-7".to_string(),
+            inspection,
+        };
+
+        let json = serde_json::to_value(&payload).unwrap();
+        assert_eq!(
+            json["stagingId"], "staging-7",
+            "the frontend reads `stagingId` — camelCase, not snake_case"
+        );
+        assert!(json["inspection"]["kind"].is_string(), "inspection is tagged");
+
+        // The handle is not a function of the source, so the `ref` key being
+        // present-as-null or absent makes no difference to it.
+        let git_with_null_ref = SkillSource::Git {
+            url: "https://github.com/anthropics/claude-code".to_string(),
+            ref_: None,
+            subpath: None,
+        };
+        let serialized = serde_json::to_value(&git_with_null_ref).unwrap();
+        assert!(
+            serialized.get("ref").is_some(),
+            "serde still emits `ref: null` here; the handle must not depend on that"
+        );
     }
 
     #[test]
@@ -688,6 +783,147 @@ mod tests {
         })
         .unwrap_err();
         assert_eq!(err.code, ErrorCode::InvalidSkill);
+    }
+
+    /// The invariant install depends on: the relative `dir` the user reviewed
+    /// must resolve to a real skill under `root()`. If `root()` and the paths
+    /// inspection used ever drift apart, install copies the wrong thing.
+    #[test]
+    fn reviewed_relative_dirs_resolve_under_the_staged_root() {
+        let local = tempfile::TempDir::new().unwrap();
+        // Collection layout: one level deep, which is the documented ceiling.
+        write_skill(local.path(), "frontend-design");
+
+        let staged = stage_source(&SkillSource::Local {
+            path: local.path().to_string_lossy().into_owned(),
+        })
+        .unwrap();
+
+        let skills = staged.inspection().skills();
+        assert_eq!(skills.len(), 1);
+        assert_eq!(skills[0].dir, "frontend-design");
+        assert!(
+            staged.root().join(&skills[0].dir).join(SKILL_FILE).is_file(),
+            "the reviewed relative dir must resolve to a real skill under root()"
+        );
+    }
+
+    /// The reported bug: the user confirmed a replace, the toast said the old
+    /// contents were trashed and a skill was installed, but the destination
+    /// ended up holding a copy of the repository root — no SKILL.md — while the
+    /// original directory was still there.
+    ///
+    /// Root cause was a staging mismatch: install re-staged the source instead
+    /// of using the staging inspection had produced, so the relative dir the
+    /// user reviewed (`.` for a root-layout repo) could resolve against a
+    /// differently-parsed clone. Install must now refuse to copy anything that
+    /// is not a skill directory.
+    #[test]
+    fn REGRESSION_install_refuses_to_copy_a_non_skill_directory() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        write_skill(tmp.path(), "real-skill");
+        let source = SkillSource::Local {
+            path: tmp.path().to_string_lossy().into_owned(),
+        };
+        let staged = stage_source(&source).unwrap();
+
+        let project = tempfile::TempDir::new().unwrap();
+        let project_path = project.path().to_string_lossy().into_owned();
+
+        // The buggy selection: the staged root itself, which here is a
+        // collection container and therefore NOT a skill directory.
+        let err = install_skills(
+            &ClaudeProvider,
+            &source,
+            &staged,
+            &[".".to_string()],
+            &SkillScope::Project { project_path },
+            false,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            err.code,
+            ErrorCode::InvalidSkill,
+            "copying a non-skill must fail loudly, never report success"
+        );
+        assert!(
+            !project.path().join(".claude/skills").join("real-skill").exists(),
+            "nothing should have been copied"
+        );
+    }
+
+    /// A root-layout source installs as one skill, and the returned name is the
+    /// skill's own name — never a placeholder. A toast reading “Skill” was
+    /// installed is a bug the user has no way to act on.
+    ///
+    /// The install id for this layout comes from frontmatter `name` (the staged
+    /// root's own basename is a meaningless temp dir name), so the frontmatter
+    /// here supplies one; the placeholder fallback is covered separately below.
+    #[test]
+    fn root_layout_install_reports_a_real_name() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            tmp.path().join(SKILL_FILE),
+            "---\nname: root-skill\ndescription: d\n---\nbody",
+        )
+        .unwrap();
+
+        let source = SkillSource::Local {
+            path: tmp.path().to_string_lossy().into_owned(),
+        };
+        let staged = stage_source(&source).unwrap();
+
+        let project = tempfile::TempDir::new().unwrap();
+        let installed = install_skills(
+            &ClaudeProvider,
+            &source,
+            &staged,
+            &[".".to_string()],
+            &SkillScope::Project {
+                project_path: project.path().to_string_lossy().into_owned(),
+            },
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(installed.len(), 1);
+        assert_eq!(installed[0].name, "root-skill");
+        assert_ne!(installed[0].name, "Skill", "no placeholder names");
+    }
+
+    /// The placeholder itself: frontmatter without a `name` must fall back to
+    /// the directory id, because “Skill” is not a name a user can act on.
+    #[test]
+    fn name_without_frontmatter_falls_back_to_the_id() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        write_skill(tmp.path(), "no-name");
+        // Strip the `name` line the helper writes, keeping valid frontmatter.
+        std::fs::write(
+            tmp.path().join("no-name").join(SKILL_FILE),
+            "---\ndescription: d\n---\nbody",
+        )
+        .unwrap();
+
+        let source = SkillSource::Local {
+            path: tmp.path().to_string_lossy().into_owned(),
+        };
+        let staged = stage_source(&source).unwrap();
+
+        let project = tempfile::TempDir::new().unwrap();
+        let installed = install_skills(
+            &ClaudeProvider,
+            &source,
+            &staged,
+            &["no-name".to_string()],
+            &SkillScope::Project {
+                project_path: project.path().to_string_lossy().into_owned(),
+            },
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(installed[0].name, "no-name", "falls back to the id");
     }
 
     #[test]

@@ -20,6 +20,7 @@ import {
 } from "@/features/skills/skill-badges";
 import { EmptyState, LoadingState } from "@/features/states";
 import { invokeCommand } from "@/lib/tauri";
+import { formatPath } from "@/lib/paths";
 import type { Skill } from "@/types/skill";
 
 interface DirEntry {
@@ -67,6 +68,11 @@ export function SkillDetailPage() {
     );
   }
 
+  // Only the backend knows the home directory, so a registered project's
+  // display form is preferred; the fallback at least normalizes separators.
+  const projectDisplayPath = (raw: string) =>
+    (projects.data ?? []).find((p) => p.path === raw)?.displayPath ?? formatPath(raw);
+
   return (
     <main className="flex flex-1 flex-col gap-4 p-4 sm:p-6">
       <BackLink />
@@ -85,7 +91,7 @@ export function SkillDetailPage() {
               <ScopeBadge scope={skill.scope} />
               {skill.scope.type === "project" ? (
                 <span className="font-mono text-xs text-muted-foreground">
-                  {skill.scope.projectPath}
+                  {projectDisplayPath(skill.scope.projectPath)}
                 </span>
               ) : null}
             </div>

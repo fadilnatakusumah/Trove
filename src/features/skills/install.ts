@@ -30,14 +30,30 @@ export type SourceInspection =
   | { kind: "single"; id: string; name?: string; description?: string; dir: string }
   | { kind: "collection"; skills: DiscoveredSkill[] };
 
+/**
+ * What `inspect_source` returns: the discovery result plus an opaque handle for
+ * the staging it came from.
+ *
+ * The handle is server-issued and must be passed back verbatim to
+ * `install_skill`. It replaced a client-computed key that serialized the
+ * request and compared strings — Rust emitted `"ref":null` where JS omitted
+ * the key, so the two never matched and every install failed.
+ */
+export interface StagedInspection {
+  stagingId: string;
+  inspection: SourceInspection;
+}
+
 /** Flatten an inspection into its discovered skills (mirrors the Rust
  * `SourceInspection::skills()` helper). */
 export function skillsOf(inspection: SourceInspection): DiscoveredSkill[] {
   return inspection.kind === "single" ? [inspection] : inspection.skills;
 }
 
-export async function inspectSource(source: SkillSource): Promise<SourceInspection> {
-  return invokeCommand<SourceInspection>("inspect_source", { source });
+export async function inspectSource(
+  source: SkillSource,
+): Promise<StagedInspection> {
+  return invokeCommand<StagedInspection>("inspect_source", { source });
 }
 
 export async function installSkills(args: {
@@ -45,6 +61,8 @@ export async function installSkills(args: {
   providerId: ProviderId;
   scope: SkillScope;
   skillDirs: string[];
+  /** Handle from the `inspectSource` call this install follows. */
+  stagingId: string;
   /**
    * Replace an occupied destination. Only ever true after the user confirmed
    * it — the backend refuses to overwrite otherwise (Rule 14).

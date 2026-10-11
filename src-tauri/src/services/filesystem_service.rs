@@ -42,6 +42,43 @@ pub fn resolve_home_relative(path: &str) -> PathBuf {
     PathBuf::from(path)
 }
 
+/// Strip Windows' verbatim prefix so a path reads the way the user knows it.
+/// `\\?\C:\Users\me` → `C:\Users\me`; `\\?\UNC\srv\share` → `\\srv\share`.
+fn strip_verbatim(path: &Path) -> PathBuf {
+    let text = path.to_string_lossy();
+    if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+    match text.strip_prefix(r"\\?\") {
+        Some(rest) => PathBuf::from(rest),
+        None => path.to_path_buf(),
+    }
+}
+
+/// The single way a path is rendered for a human (§8.1).
+///
+/// Every user-facing string — error details, toasts, log lines, IPC payloads —
+/// goes through this, so a path can't reach the UI with mixed separators
+/// (`C:\Users\me\.config/opencode/skills\x`) or an internal-looking `\\?\`
+/// prefix. The home directory is shortened to `~` because these paths are long
+/// and the home prefix is the least informative part.
+///
+/// Paths are still *compared* and *sent* in their real form; this is display
+/// only, never a value to feed back into a filesystem call.
+pub fn display_path(path: &Path) -> String {
+    let cleaned = strip_verbatim(path);
+    if let Some(home) = dirs::home_dir() {
+        let home = strip_verbatim(&home);
+        if let Ok(rel) = cleaned.strip_prefix(&home) {
+            let rel = rel.to_string_lossy().replace('\\', "/");
+            if !rel.is_empty() {
+                return format!("~/{rel}");
+            }
+        }
+    }
+    cleaned.to_string_lossy().replace('\\', "/")
+}
+
 /// Canonicalize `candidate` and verify it is inside `root`.
 ///
 /// Every mutation target must pass through this — it is the path-traversal
@@ -56,8 +93,8 @@ pub fn ensure_within(root: &Path, candidate: &Path) -> Result<PathBuf, AppError>
     } else {
         Err(AppError::new(ErrorCode::PathEscape).with_detail(format!(
             "'{}' is outside approved root '{}'",
-            candidate.display(),
-            root.display()
+            display_path(&candidate),
+            display_path(&root)
         )))
     }
 }
@@ -86,7 +123,7 @@ fn canonicalize_best_effort(path: &Path) -> Result<PathBuf, AppError> {
                 } else {
                     // Reached the filesystem root without resolving.
                     return Err(AppError::new(ErrorCode::PathEscape)
-                        .with_detail(format!("cannot resolve '{}'", path.display())));
+                        .with_detail(format!("cannot resolve '{}'", display_path(path))));
                 }
             }
         }
@@ -131,7 +168,7 @@ pub fn read_text_file_capped(path: &Path) -> Result<String, AppError> {
     if meta.len() > MAX_TEXT_FILE_BYTES {
         return Err(AppError::new(ErrorCode::InvalidSkill).with_detail(format!(
             "file '{}' is {} bytes, exceeding the {} byte limit",
-            path.display(),
+            display_path(path),
             meta.len(),
             MAX_TEXT_FILE_BYTES
         )));
@@ -155,7 +192,7 @@ pub fn copy_dir_checked(
             OverwritePolicy::Fail => {
                 return Err(AppError::new(ErrorCode::Conflict).with_detail(format!(
                     "destination '{}' already exists",
-                    dest.display()
+                    display_path(dest)
                 )))
             }
             OverwritePolicy::BackupAndReplace => {
@@ -179,7 +216,7 @@ fn copy_recursive(
     if meta.file_type().is_symlink() {
         // Never follow or recreate symlinks from untrusted sources (§22): a
         // symlink could point anywhere; recreating it could too. Skip them.
-        log::warn!("skipping symlink during copy: {}", src.display());
+        log::warn!("skipping symlink during copy: {}", display_path(src));
         return Ok(());
     }
 
@@ -200,7 +237,7 @@ pub fn move_to_trash(path: &Path) -> Result<(), AppError> {
     trash::delete(path).map_err(|e| {
         AppError::new(ErrorCode::PermissionDenied).with_detail(format!(
             "failed to move '{}' to trash: {e}",
-            path.display()
+            display_path(path)
         ))
     })
 }
@@ -220,7 +257,7 @@ pub fn rename_checked(root: &Path, from: &Path, to: &Path) -> Result<(), AppErro
 pub fn delete_dir_permanent(path: &Path) -> Result<(), AppError> {
     if !path.exists() {
         return Err(AppError::new(ErrorCode::SkillNotFound)
-            .with_detail(format!("'{}' does not exist", path.display())));
+            .with_detail(format!("'{}' does not exist", display_path(path))));
     }
     fs::remove_dir_all(path).map_err(|e| io_to_app_error(&e, path))
 }
@@ -231,7 +268,7 @@ fn io_to_app_error(err: &io::Error, path: &Path) -> AppError {
         io::ErrorKind::NotFound => ErrorCode::SkillNotFound,
         _ => ErrorCode::InstallFailed,
     };
-    AppError::new(code).with_detail(format!("'{}': {err}", path.display()))
+    AppError::new(code).with_detail(format!("'{}': {err}", display_path(path)))
 }
 
 #[cfg(test)]
@@ -260,6 +297,43 @@ mod tests {
         let (_dir, root) = temp_root();
         let ok = root.join("react-expert");
         assert!(ensure_within(&root, &ok).is_ok());
+    }
+
+    /// The reported bug: a path reached the UI as
+    /// `C:\Users\me\.config/opencode/skills\frontend-design` — backslashes from
+    /// the OS mixed with forward slashes we had joined ourselves.
+    #[test]
+    fn display_path_never_mixes_separators() {
+        let home = dirs::home_dir().expect("home dir");
+        let joined = home
+            .join(".config")
+            .join("opencode")
+            .join("skills")
+            .join("frontend-design");
+
+        let shown = display_path(&joined);
+        assert!(
+            !shown.contains('\\'),
+            "displayed path must use forward slashes only, got: {shown}"
+        );
+        assert_eq!(shown, "~/.config/opencode/skills/frontend-design");
+    }
+
+    /// Windows `canonicalize` returns verbatim paths; those must not leak.
+    #[test]
+    fn display_path_strips_the_windows_verbatim_prefix() {
+        assert_eq!(display_path(Path::new(r"\\?\C:\Dev\skills")), "C:/Dev/skills");
+        // A UNC share keeps its network form: the leading `\\` becomes `//`,
+        // which is the forward-slash spelling of the same path.
+        assert_eq!(display_path(Path::new(r"\\?\UNC\srv\share")), "//srv/share");
+    }
+
+    /// A path outside the home directory is shown in full — shortening is a
+    /// convenience, not a lie about where the file is.
+    #[test]
+    fn display_path_keeps_paths_outside_home_intact() {
+        let outside = Path::new("/var/tmp/some-skill");
+        assert_eq!(display_path(outside), "/var/tmp/some-skill");
     }
 
     #[test]

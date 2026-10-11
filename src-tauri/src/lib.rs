@@ -45,6 +45,7 @@ pub fn run() {
       app.manage(crate::services::project_service::ProjectRegistry::new(
         app_data_dir,
       ));
+      app.manage(commands::StagingRegistry::default());
       log::info!("agent-manager {} started", env!("CARGO_PKG_VERSION"));
       Ok(())
     })

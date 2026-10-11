@@ -4,10 +4,73 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>app</title>
+    <title>Agent Manager</title>
+    <style>
+      /* Boot splash. The webview shows this before React mounts, so the first
+         paint is the app's own background instead of a white flash. React
+         replaces #root's contents on mount; the CSS below matches the app's
+         theme so the hand-off is invisible. */
+      :root {
+        color-scheme: light dark;
+        --boot-bg: oklch(1 0 0);
+        --boot-fg: oklch(0.145 0 0);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --boot-bg: oklch(0.145 0 0);
+          --boot-fg: oklch(0.985 0 0);
+        }
+      }
+      html,
+      body {
+        margin: 0;
+        background: var(--boot-bg);
+      }
+      #root {
+        min-height: 100vh;
+      }
+      #boot {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        font:
+          14px/1.5 system-ui,
+          -apple-system,
+          sans-serif;
+        color: var(--boot-fg);
+        background: var(--boot-bg);
+      }
+      #boot .spinner {
+        width: 20px;
+        height: 20px;
+        border: 2px solid currentColor;
+        border-top-color: transparent;
+        border-radius: 50%;
+        opacity: 0.55;
+        animation: boot-spin 0.7s linear infinite;
+      }
+      @keyframes boot-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #boot .spinner {
+          animation-duration: 2s;
+        }
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
+    <div id="boot" role="status" aria-live="polite">
+      <div class="spinner"></div>
+      <div>Starting Agent Manager…</div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

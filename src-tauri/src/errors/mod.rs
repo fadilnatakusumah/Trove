@@ -135,7 +135,10 @@ impl AppError {
             std::io::ErrorKind::NotFound => ErrorCode::SkillNotFound,
             _ => ErrorCode::InstallFailed,
         };
-        AppError::new(code).with_detail(format!("'{}': {err}", path.as_ref().display()))
+        AppError::new(code).with_detail(format!(
+            "'{}': {err}",
+            crate::services::filesystem_service::display_path(path.as_ref())
+        ))
     }
 }
 

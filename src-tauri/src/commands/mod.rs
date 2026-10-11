@@ -4,12 +4,64 @@
 //! to services, and return structured `AppError`s. No business logic here
 //! (tech-plan §24).
 
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+
 use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::errors::{AppError, ErrorCode};
 use crate::services::filesystem_service as fs_service;
 use crate::services::git_service;
+use crate::services::install_service::{StagedInspection, StagedSource};
+
+/// Staged sources kept alive between `inspect_source` and `install_skill`.
+///
+/// Inspect and install are two IPC calls but one operation: the user reviews
+/// what inspect found, then installs it. Re-staging for the install step would
+/// clone the same source a second time — and for a pasted GitHub link, re-parse
+/// the URL, which resolves the subpath differently depending on what the fresh
+/// clone contains. That mismatch is how a whole repository ended up copied into
+/// a skills directory under a skill's name.
+///
+/// Entries are keyed by a server-issued id, never by the request contents: an
+/// id cannot drift out of sync with the other language's serialization.
+#[derive(Default)]
+pub struct StagingRegistry {
+    next_id: AtomicU64,
+    staged: Mutex<HashMap<String, Arc<StagedSource>>>,
+}
+
+impl StagingRegistry {
+    /// Park a staging and return the handle that claims it.
+    ///
+    /// Previous entries are dropped first: only one install dialog exists at a
+    /// time, so anything still parked is an abandoned inspection whose temp dir
+    /// would otherwise linger.
+    fn park(&self, staged: StagedSource) -> String {
+        let id = format!("staging-{}", self.next_id.fetch_add(1, Ordering::SeqCst));
+        let mut map = self.staged.lock().expect("staging registry");
+        map.clear();
+        map.insert(id.clone(), Arc::new(staged));
+        id
+    }
+
+    /// Borrow a staging. Deliberately does **not** remove it: installing can
+    /// run twice for one inspection — the first attempt is refused with a
+    /// CONFLICT, and the user then confirms a replace. Consuming the staging on
+    /// the first attempt would strand that retry.
+    ///
+    /// An `Arc` keeps the temp dir alive for as long as any in-flight install
+    /// still references it, even though the map entry may be replaced.
+    fn claim(&self, staging_id: &str) -> Option<Arc<StagedSource>> {
+        self.staged
+            .lock()
+            .expect("staging registry")
+            .get(staging_id)
+            .cloned()
+    }
+}
 
 /// Log a command failure once, at the IPC boundary (§31).
 ///
@@ -34,10 +86,10 @@ pub async fn open_logs(app: tauri::AppHandle) -> Result<String, AppError> {
         // Not an error state worth alarming the user with — just nothing yet.
         return Err(AppError::new(ErrorCode::SkillNotFound).with_detail(format!(
             "no logs have been written yet at '{}'",
-            dir.display()
+            fs_service::display_path(&dir)
         )));
     }
-    let shown = dir.to_string_lossy().into_owned();
+    let shown = fs_service::display_path(&dir);
     app.opener()
         .open_path(shown.clone(), None::<&str>)
         .map_err(|e| {
@@ -58,14 +110,14 @@ pub async fn open_folder(
     let resolved = fs_service::resolve_home_relative(&path);
     if !resolved.is_dir() {
         return Err(AppError::new(ErrorCode::SkillNotFound)
-            .with_detail(format!("'{}' is not a directory", resolved.display())));
+            .with_detail(format!("'{}' is not a directory", fs_service::display_path(&resolved))));
     }
-    log::info!("opening folder {}", resolved.display());
+    log::info!("opening folder {}", fs_service::display_path(&resolved));
     app.opener()
         .open_path(resolved.to_string_lossy().into_owned(), None::<&str>)
         .map_err(|e| {
             AppError::new(ErrorCode::PermissionDenied)
-                .with_detail(format!("failed to open '{}': {e}", resolved.display()))
+                .with_detail(format!("failed to open '{}': {e}", fs_service::display_path(&resolved)))
         })
 }
 
@@ -126,36 +178,57 @@ pub async fn list_skill_files(
 // ---------------------------------------------------------------------------
 
 /// Inspect a source (git URL or local folder) without installing: returns the
-/// discovered skill(s) for the install dialog (§19 pre-flight check).
+/// discovered skill(s) for the install dialog (§19 pre-flight check), plus the
+/// handle that `install_skill` must present to copy from this very staging.
 #[tauri::command]
 pub async fn inspect_source(
+    registry: tauri::State<'_, StagingRegistry>,
     source: crate::models::SkillSource,
-) -> Result<crate::services::install_service::SourceInspection, AppError> {
-    tauri::async_runtime::spawn_blocking(move || {
+) -> Result<StagedInspection, AppError> {
+    let result = tauri::async_runtime::spawn_blocking(move || {
         let staged = crate::services::install_service::stage_source(&source)?;
-        Ok(staged.inspection().clone())
+        let inspection = staged.inspection().clone();
+        Ok::<_, AppError>((staged, inspection))
     })
     .await
-    .map_err(|e| AppError::new(ErrorCode::InstallFailed).with_detail(e.to_string()))?
+    .map_err(|e| AppError::new(ErrorCode::InstallFailed).with_detail(e.to_string()))?;
+
+    let (staged, inspection) = logged("inspect source", result)?;
+    let staging_id = registry.park(staged);
+    Ok(StagedInspection {
+        staging_id,
+        inspection,
+    })
 }
 
-/// Install selected skill directories from a staged source.
+/// Install selected skill directories from a previously inspected source.
 ///
 /// `replace` is false unless the user explicitly confirmed replacing an
 /// occupied destination; when false a conflict changes nothing (Rule 14).
 #[tauri::command]
 pub async fn install_skill(
+    registry: tauri::State<'_, StagingRegistry>,
+    staging_id: String,
     source: crate::models::SkillSource,
     provider_id: crate::models::ProviderId,
     scope: crate::models::SkillScope,
     skill_dirs: Vec<String>,
     replace: bool,
 ) -> Result<Vec<crate::models::Skill>, AppError> {
+    let staged = registry.claim(&staging_id).ok_or_else(|| {
+        AppError::new(ErrorCode::SkillNotFound).with_detail(
+            "that source is no longer staged — run Inspect again before installing",
+        )
+    });
+    // Logged here as well as through `logged` below: a lookup miss returns
+    // before reaching the inner call, and an unlogged failure is how this bug
+    // stayed invisible in the log file.
+    let staged = logged("claim staging", staged)?;
+
     logged(
         "install skill",
         tauri::async_runtime::spawn_blocking(move || {
             let provider = crate::providers::provider_by_id(provider_id)?;
-            let staged = crate::services::install_service::stage_source(&source)?;
             crate::services::install_service::install_skills(
                 provider.as_ref(),
                 &source,
@@ -264,4 +337,63 @@ pub async fn remove_project(
     id: String,
 ) -> Result<(), AppError> {
     registry.remove(&id)
+}
+
+#[cfg(test)]
+mod staging_tests {
+    use super::*;
+    use crate::models::SkillSource;
+
+    fn staged() -> StagedSource {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            tmp.path().join("SKILL.md"),
+            "---\nname: staged\n---\nbody",
+        )
+        .unwrap();
+        crate::services::install_service::stage_source(&SkillSource::Local {
+            path: tmp.path().to_string_lossy().into_owned(),
+        })
+        .unwrap()
+    }
+
+    /// The reported bug: after a CONFLICT the user confirmed "move aside and
+    /// install", and that retry failed with "could not find that skill".
+    ///
+    /// Cause: the first (refused) attempt consumed the staging, so the retry
+    /// had nothing to claim. Both attempts come from one inspection, so
+    /// claiming must not consume it.
+    #[test]
+    fn staging_can_be_claimed_more_than_once() {
+        let registry = StagingRegistry::default();
+        let id = registry.park(staged());
+
+        assert!(registry.claim(&id).is_some(), "first attempt (refused)");
+        assert!(
+            registry.claim(&id).is_some(),
+            "retry after the user confirms the replace"
+        );
+    }
+
+    /// A stale handle from an earlier inspection must not resolve to a newer
+    /// staging, or install would copy something the user never reviewed.
+    #[test]
+    fn a_new_inspection_invalidates_the_previous_handle() {
+        let registry = StagingRegistry::default();
+        let old = registry.park(staged());
+        let new = registry.park(staged());
+
+        assert_ne!(old, new, "each inspection gets a fresh handle");
+        assert!(registry.claim(&new).is_some());
+        assert!(
+            registry.claim(&old).is_none(),
+            "the superseded staging is gone, so its handle cannot resolve"
+        );
+    }
+
+    #[test]
+    fn an_unknown_handle_does_not_resolve() {
+        let registry = StagingRegistry::default();
+        assert!(registry.claim("staging-999").is_none());
+    }
 }

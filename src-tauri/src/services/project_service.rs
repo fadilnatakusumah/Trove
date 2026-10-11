@@ -4,7 +4,7 @@
 //! application stores only the registration; it never copies or moves
 //! project content. No database (Rule 8).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
@@ -17,7 +17,16 @@ use crate::models::ProviderId;
 pub struct RegisteredProject {
     pub id: String,
     pub name: String,
+    /// The real path. Used for IPC calls and identity — never for display.
     pub path: String,
+    /// Display form (`~`-shortened, forward slashes).
+    ///
+    /// Computed here because only the backend knows the home directory; the
+    /// frontend cannot shorten it itself. `default` keeps stores written before
+    /// this field existed loadable, and `list()` refreshes it on every read so
+    /// it can never be stale.
+    #[serde(default)]
+    pub display_path: String,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -122,7 +131,20 @@ impl ProjectRegistry {
     }
 
     pub fn list(&self) -> Vec<RegisteredProject> {
-        self.cache.lock().expect("project cache").projects.clone()
+        // Refresh the display form on read rather than trusting what was
+        // persisted (the home directory can move between runs).
+        self.cache
+            .lock()
+            .expect("project cache")
+            .projects
+            .iter()
+            .map(|p| RegisteredProject {
+                display_path: crate::services::filesystem_service::display_path(
+                    Path::new(&p.path),
+                ),
+                ..p.clone()
+            })
+            .collect()
     }
 
     pub fn add(&self, path: &str) -> Result<RegisteredProject, AppError> {
@@ -131,7 +153,7 @@ impl ProjectRegistry {
         if !resolved.is_dir() {
             return Err(AppError::new(ErrorCode::SkillNotFound).with_detail(format!(
                 "'{}' is not a directory",
-                resolved.display()
+                crate::services::filesystem_service::display_path(&resolved)
             )));
         }
         let path_str = resolved.to_string_lossy().into_owned();
@@ -139,6 +161,7 @@ impl ProjectRegistry {
         let project = RegisteredProject {
             id: id.clone(),
             name: detect_project_name(&path_str),
+            display_path: crate::services::filesystem_service::display_path(&resolved),
             path: path_str,
         };
 

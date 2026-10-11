@@ -99,7 +99,7 @@ function ProjectRow({
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">{project.name}</p>
           <p className="truncate font-mono text-xs text-muted-foreground">
-            {project.path}
+            {project.displayPath}
           </p>
         </div>
         <Button

@@ -10,7 +10,10 @@ import { invokeCommand } from "@/lib/tauri";
 export interface RegisteredProject {
   id: string;
   name: string;
+  /** The real path — use this for IPC calls and identity, never for display. */
   path: string;
+  /** Display form (`~`-shortened, forward slashes). Computed by the backend. */
+  displayPath: string;
 }
 
 export async function listProjects(): Promise<RegisteredProject[]> {

@@ -59,6 +59,9 @@ export function InstallDialog({
   const [scopeType, setScopeType] = useState<"global" | "project">("global");
   const [projectPath, setProjectPath] = useState<string>("");
   const [inspection, setInspection] = useState<SourceInspection | null>(null);
+  // Handle for the staging this inspection came from. Sent back with the
+  // install so the backend copies from the clone the user just reviewed.
+  const [stagingId, setStagingId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   // A refused install, held so the user can choose to replace and retry.
   const [conflict, setConflict] = useState<string | null>(null);
@@ -92,6 +95,7 @@ export function InstallDialog({
 
   const reset = () => {
     setInspection(null);
+    setStagingId(null);
     setSelected(new Set());
     setConflict(null);
   };
@@ -114,9 +118,10 @@ export function InstallDialog({
       return inspectSource(source);
     },
     onSuccess: (result) => {
-      setInspection(result);
+      setStagingId(result.stagingId);
+      setInspection(result.inspection);
       // Default: select all discovered skills.
-      setSelected(new Set(skillsOf(result).map((s) => s.dir)));
+      setSelected(new Set(skillsOf(result.inspection).map((s) => s.dir)));
     },
     onError: (e) => {
       // Structured AppError: message plus the underlying reason (e.g. git's
@@ -129,7 +134,7 @@ export function InstallDialog({
     // `replace` arrives from the conflict confirmation below; it is never
     // inferred, so an overwrite can only happen because the user asked.
     mutationFn: async (replace: boolean) => {
-      if (!source || !scope || !effectiveProvider || !inspection) {
+      if (!source || !scope || !effectiveProvider || !inspection || !stagingId) {
         throw new Error("Complete the install options first");
       }
       const chosen = skillsOf(inspection)
@@ -141,6 +146,7 @@ export function InstallDialog({
         providerId: effectiveProvider,
         scope,
         skillDirs: chosen,
+        stagingId,
         replace,
       });
     },
@@ -150,12 +156,20 @@ export function InstallDialog({
       void queryClient.invalidateQueries({ queryKey: ["providers"] });
 
       const where = scope?.type === "project" ? "to this project" : "globally";
+      // Name the skill from the inspection — that is what the user picked and
+      // what its directory is called. The installed `Skill` carries a
+      // frontmatter name, which can disagree with the directory.
+      const chosenNames = inspection
+        ? skillsOf(inspection)
+            .filter((s) => selected.has(s.dir))
+            .map((s) => s.name ?? s.id)
+        : [];
       toast.success(
         installed.length === 1 ? "Skill installed" : "Skills installed",
         {
           description:
             installed.length === 1
-              ? `“${installed[0].name}” was installed ${where}.`
+              ? `“${chosenNames[0] ?? installed[0].id}” was installed ${where}.`
               : `${installed.length} skills were installed ${where}.`,
           // Replacing trashed whatever was there, so say it plainly.
           icon: replace ? undefined : (

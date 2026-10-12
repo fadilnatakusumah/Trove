@@ -12,8 +12,8 @@ permissions:
   contents: read
 
 jobs:
-  # Fast checks first: a formatting or lint failure should fail the run in
-  # seconds, not after a full compile.
+  # Cheap checks only, so a formatting or lint typo fails in seconds instead of
+  # after a full compile. Deliberately no Rust *compile* here — see `clippy`.
   lint:
     name: Lint
     runs-on: ubuntu-22.04
@@ -29,25 +29,49 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # `npm run lint` rather than a hand-written eslint invocation: the script
+      # is the single definition of "lint this project", so CI and a developer's
+      # terminal can never disagree about what it checks.
       - name: ESLint
-        run: npx eslint src
+        run: npm run lint
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: rustfmt
+
+      # rustfmt parses but does not compile, so it needs no system libraries.
+      - name: Rustfmt
+        working-directory: src-tauri
+        run: cargo fmt --check
+
+  # Split from `lint` because clippy *does* compile the crate, and on Linux
+  # that needs GTK/WebKit development headers. Omitting them fails deep inside
+  # a dependency's build script (`gdk-sys` cannot find `gdk-3.0` via
+  # pkg-config) with an error that says nothing about the missing package.
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
 
       - name: Cache Rust build
         uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
 
-      - name: Rustfmt
-        working-directory: src-tauri
-        run: cargo fmt --check
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
-      # Clippy is allowed to look at test code too (`--all-targets`), since the
-      # test suites are the ones guarding filesystem safety.
+      # `--all-targets` includes the test suites, which are the ones guarding
+      # filesystem safety. `-D warnings` makes clippy a gate, not a suggestion.
       - name: Clippy
         working-directory: src-tauri
         run: cargo clippy --all-targets -- -D warnings

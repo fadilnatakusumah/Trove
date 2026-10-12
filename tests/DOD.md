@@ -7,10 +7,15 @@ app (see [MANUAL.md](./MANUAL.md)) · ⬜ not yet done.
 Re-run the automated half with:
 
 ```bash
-cd src-tauri && cargo test     # 78 tests
-cd .. && npm run build         # tsc -b + vite build
-npx eslint src                 # lint
+cd src-tauri && cargo test                      # 89 tests
+cd src-tauri && cargo fmt --check               # formatting
+cd src-tauri && cargo clippy --all-targets -- -D warnings
+cd .. && npm run build                          # tsc -b + vite build
+npx eslint src                                  # lint
 ```
+
+All five run in CI on every PR (`.github/workflows/ci.yml`), and the tests
+additionally run on macOS and Windows.
 
 ## Provider discovery
 
@@ -79,13 +84,22 @@ installed agent with no skills yet is not reported as missing.
 
 | Item | Status | Evidence |
 |---|---|---|
-| `cargo test` clean | ✅ | 78 passed, 0 warnings |
+| `cargo test` clean | ✅ | 89 passed, 0 warnings |
+| `cargo fmt --check` clean | ✅ | was failing before plan 09; formatted |
+| `cargo clippy --all-targets -- -D warnings` clean | ✅ | 5 warnings fixed in plan 09 |
 | `tsc -b` clean | ✅ | `npm run build` |
-| lint clean | ✅ | `npx eslint src` exits 0. Two real fixes: `providerLabel` moved out of `skill-badges.tsx` into `skill-labels.ts` (Fast Refresh needs component-only files), and `set-state-in-effect` removed from `ConfirmDialog`. A scoped override relaxes `react-refresh/only-export-components` + `set-state-in-effect` for `src/components/ui/**` and `src/hooks/use-mobile.ts` only — those are shadcn CLI output, and editing them would be reverted by the next `shadcn add` |
-| Platform bundles build + smoke | ⚠️ | Windows: **builds** — MSI (3.61 MiB) + NSIS (2.44 MiB), release profile, 0 warnings. On-app smoke still needs a manual pass. macOS/Linux: not built (no runner available) — see MANUAL.md |
-| README updated | ✅ | Repo README |
+| lint clean | ✅ | `npx eslint src` exits 0. Two real fixes (`providerLabel` extracted to `skill-labels.ts`; `setState`-in-effect removed from `ConfirmDialog`), plus a scoped override for shadcn CLI output only |
+| README updated | ✅ | What it does, build/test/check, logs, releases, architecture, safety model |
 | Logging with rotation, no secrets | ✅ | `lib.rs` log targets; `sanitize_url` strips credentials; no skill content is logged |
 | Performance within §33 budgets | ✅ | `performance_test.rs` |
+
+| Release readiness (plan 09) | Status | Evidence |
+|---|---|---|
+| App icon for all desktop platforms | ✅ | `assets/app-icon.svg` → `npx tauri icon`; legible at 32px |
+| Single-source version | ✅ | `tauri.conf.json` reads `../package.json`; verified by the bundle name `Agent Manager_0.1.0_x64_en-US.msi` |
+| Release workflow builds all platforms | ⬜ | `.github/workflows/release.yml` written; needs one real tagged run to confirm |
+| CI workflow runs on PRs | ⬜ | `.github/workflows/ci.yml` written; needs a push to confirm |
+| Bundles code-signed | ❌ | Not signed — documented in README and plan 09 |
 
 ### Deviation from plan 08 §8.3, stated openly
 

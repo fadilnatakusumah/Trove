@@ -45,17 +45,72 @@ npm run tauri build
 
 Bundles land in `src-tauri/target/release/bundle/`.
 
+## Releases
+
+Releases are cut by pushing a version tag. CI builds installers for Windows,
+Linux, and macOS (Apple Silicon and Intel) and uploads them to a **draft**
+GitHub release for review.
+
+```bash
+npm version patch --no-git-tag-version   # or minor / major
+git commit -am "chore: release v0.2.0"
+git tag v0.2.0
+git push && git push --tags
+```
+
+The tag **must** match the version in `package.json` — that is the single
+source of truth (Tauri reads it via `version: "../package.json"`). The release
+workflow fails early if they disagree, rather than shipping a bundle whose
+version does not match its tag.
+
+Artifacts per platform:
+
+| Platform | Bundles |
+|---|---|
+| Windows | `.msi` (WiX), `.exe` (NSIS installer) |
+| macOS | `.dmg`, `.app.tar.gz` — separate Apple Silicon and Intel builds |
+| Linux | `.deb`, `.rpm`, `.AppImage` |
+
+### Releases are unsigned
+
+macOS and Windows builds are **not code-signed**, so both operating systems
+warn on first launch:
+
+- **macOS** — Gatekeeper reports *"Agent Manager is damaged and can't be
+  opened"*. Right-click the app → **Open**, or clear the quarantine flag:
+  `xattr -dr com.apple.quarantine "/Applications/Agent Manager.app"`
+- **Windows** — SmartScreen shows *"Windows protected your PC"*. Choose
+  **More info** → **Run anyway**.
+- **Linux** — no signing requirement; installs normally.
+
+Fixing this properly needs an Apple Developer ID and a Windows code-signing
+certificate. The workflows are laid out so signing can be added by supplying
+secrets, without restructuring.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every PR and push to `master`:
+
+- ESLint, `cargo fmt --check`, and `cargo clippy -- -D warnings` (fast, run first)
+- `cargo test` + `npm run build` on Linux, macOS, and Windows
+
+Tests run on all three platforms deliberately: the filesystem layer is where
+platform differences actually surface (Windows `\\?\` verbatim paths, path
+separators, the OS trash API).
+
+
 ## Test and check
 
 ```bash
-# Rust: unit + integration + performance suites (78 tests)
+# Rust: unit + integration + performance suites (89 tests)
 cd src-tauri && cargo test
 
 # Frontend: type-check + production build
 npm run build
 
-# Lint
+# Lint, formatting, and lints-with-teeth (all enforced in CI)
 npx eslint src
+cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings
 ```
 
 The Rust suite covers the safety-critical paths — path-traversal guards,

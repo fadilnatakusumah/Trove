@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 
 use app_lib::models::{ProviderId, SkillScope, SkillSource};
 use app_lib::providers::claude::ClaudeProvider;
-use app_lib::providers::{is_skill_dir, DISABLED_SKILL_FILE, SKILL_FILE};
+use app_lib::providers::{DISABLED_SKILL_FILE, SKILL_FILE, is_skill_dir};
 use app_lib::services::install_service;
 use app_lib::services::lifecycle_service;
 
@@ -88,8 +88,7 @@ fn full_lifecycle_install_list_toggle_uninstall() {
     assert!(!listed[0].enabled, "and is reported as disabled");
 
     // --- enable ----------------------------------------------------------
-    lifecycle_service::set_skill_enabled(ProviderId::Claude, "react-expert", &scope, true)
-        .unwrap();
+    lifecycle_service::set_skill_enabled(ProviderId::Claude, "react-expert", &scope, true).unwrap();
     assert!(dir.join(SKILL_FILE).is_file());
     assert!(!dir.join(DISABLED_SKILL_FILE).exists());
 
@@ -97,8 +96,7 @@ fn full_lifecycle_install_list_toggle_uninstall() {
     assert!(listed[0].enabled, "re-enabled");
 
     // --- uninstall -------------------------------------------------------
-    lifecycle_service::uninstall_skill(ProviderId::Claude, "react-expert", &scope, true)
-        .unwrap();
+    lifecycle_service::uninstall_skill(ProviderId::Claude, "react-expert", &scope, true).unwrap();
     assert!(!dir.exists(), "skill directory is gone");
 
     let listed = app_lib::providers::skills_for_scope(&ClaudeProvider, &scope).unwrap();
@@ -115,8 +113,7 @@ fn disabled_skill_can_still_be_enabled_again() {
     fs::write(dir.join(SKILL_FILE), "---\nname: stranded\n---\nbody").unwrap();
     let scope = project_scope(project.path());
 
-    lifecycle_service::set_skill_enabled(ProviderId::Claude, "stranded", &scope, false)
-        .unwrap();
+    lifecycle_service::set_skill_enabled(ProviderId::Claude, "stranded", &scope, false).unwrap();
 
     // Resolution must find a directory whose SKILL.md was renamed.
     assert!(lifecycle_service::resolve_skill_dir(ProviderId::Claude, "stranded", &scope).is_ok());
@@ -152,10 +149,12 @@ fn scopes_are_independent_copies() {
     }
 
     // Uninstall in A only.
-    lifecycle_service::uninstall_skill(ProviderId::Claude, "shared-name", &scope_a, true)
-        .unwrap();
+    lifecycle_service::uninstall_skill(ProviderId::Claude, "shared-name", &scope_a, true).unwrap();
 
-    assert!(!skills_dir(a.path()).join("shared-name").exists(), "A removed");
+    assert!(
+        !skills_dir(a.path()).join("shared-name").exists(),
+        "A removed"
+    );
     assert!(
         skills_dir(b.path()).join("shared-name").is_dir(),
         "B must be untouched — the other project's copy is a different skill"
@@ -177,8 +176,8 @@ fn traversal_ids_are_refused_without_touching_the_filesystem() {
     fs::write(victim.join("keep.txt"), "must not be touched").unwrap();
 
     for evil in ["../victim", "..", ".", "", "a/b", "a\\b"] {
-        let err = lifecycle_service::uninstall_skill(ProviderId::Claude, evil, &scope, true)
-            .unwrap_err();
+        let err =
+            lifecycle_service::uninstall_skill(ProviderId::Claude, evil, &scope, true).unwrap_err();
         assert_eq!(
             err.code,
             app_lib::errors::ErrorCode::InvalidSkill,
@@ -222,14 +221,14 @@ fn reinstall_requires_explicit_confirmation() {
     // Refused: the original content survives untouched.
     let err = install("second", false).unwrap_err();
     assert_eq!(err.code, app_lib::errors::ErrorCode::Conflict);
-    let body = fs::read_to_string(skills_dir(project.path()).join("twice").join(SKILL_FILE))
-        .unwrap();
+    let body =
+        fs::read_to_string(skills_dir(project.path()).join("twice").join(SKILL_FILE)).unwrap();
     assert!(body.contains("first"), "zero-overwrite guarantee");
 
     // Confirmed: the replacement lands.
     install("second", true).unwrap();
-    let body = fs::read_to_string(skills_dir(project.path()).join("twice").join(SKILL_FILE))
-        .unwrap();
+    let body =
+        fs::read_to_string(skills_dir(project.path()).join("twice").join(SKILL_FILE)).unwrap();
     assert!(body.contains("second"), "explicit replace took effect");
 }
 
@@ -266,6 +265,10 @@ fn is_skill_dir_is_the_single_source_of_truth() {
 
     let disabled = tmp.path().join("disabled");
     fs::create_dir_all(&disabled).unwrap();
-    fs::write(disabled.join(DISABLED_SKILL_FILE), "---\nname: disabled\n---\n").unwrap();
+    fs::write(
+        disabled.join(DISABLED_SKILL_FILE),
+        "---\nname: disabled\n---\n",
+    )
+    .unwrap();
     assert!(is_skill_dir(&disabled), "a disabled skill is still a skill");
 }

@@ -31,9 +31,7 @@ pub fn probe_git() -> Result<GitProbe, AppError> {
         return Ok(GitProbe {
             available: false,
             version: None,
-            error_detail: Some(
-                String::from_utf8_lossy(&output.stderr).trim().to_string(),
-            ),
+            error_detail: Some(String::from_utf8_lossy(&output.stderr).trim().to_string()),
         });
     }
 

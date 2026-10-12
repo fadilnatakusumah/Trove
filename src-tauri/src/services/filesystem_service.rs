@@ -34,10 +34,10 @@ pub enum OverwritePolicy {
 /// Resolve a `~`-prefixed path against the user's home directory,
 /// cross-platform. Non-`~` paths are returned unchanged.
 pub fn resolve_home_relative(path: &str) -> PathBuf {
-    if let Some(rest) = path.strip_prefix("~/").or(path.strip_prefix("~\\")) {
-        if let Some(home) = dirs::home_dir() {
-            return home.join(rest);
-        }
+    if let Some(rest) = path.strip_prefix("~/").or(path.strip_prefix("~\\"))
+        && let Some(home) = dirs::home_dir()
+    {
+        return home.join(rest);
     }
     PathBuf::from(path)
 }
@@ -193,7 +193,7 @@ pub fn copy_dir_checked(
                 return Err(AppError::new(ErrorCode::Conflict).with_detail(format!(
                     "destination '{}' already exists",
                     display_path(dest)
-                )))
+                )));
             }
             OverwritePolicy::BackupAndReplace => {
                 move_to_trash(dest)?;
@@ -204,11 +204,7 @@ pub fn copy_dir_checked(
     copy_recursive(src, dest, dest_root).map_err(|(path, e)| io_to_app_error(&e, &path))
 }
 
-fn copy_recursive(
-    src: &Path,
-    dest: &Path,
-    dest_root: &Path,
-) -> Result<(), (PathBuf, io::Error)> {
+fn copy_recursive(src: &Path, dest: &Path, dest_root: &Path) -> Result<(), (PathBuf, io::Error)> {
     // Guard the destination, not the source: we only ever write under dest_root.
     ensure_within(dest_root, dest).map_err(|e| (dest.to_path_buf(), io::Error::other(e)))?;
 
@@ -228,7 +224,9 @@ fn copy_recursive(
         }
         Ok(())
     } else {
-        fs::copy(src, dest).map(|_| ()).map_err(|e| (src.to_path_buf(), e))
+        fs::copy(src, dest)
+            .map(|_| ())
+            .map_err(|e| (src.to_path_buf(), e))
     }
 }
 
@@ -322,7 +320,10 @@ mod tests {
     /// Windows `canonicalize` returns verbatim paths; those must not leak.
     #[test]
     fn display_path_strips_the_windows_verbatim_prefix() {
-        assert_eq!(display_path(Path::new(r"\\?\C:\Dev\skills")), "C:/Dev/skills");
+        assert_eq!(
+            display_path(Path::new(r"\\?\C:\Dev\skills")),
+            "C:/Dev/skills"
+        );
         // A UNC share keeps its network form: the leading `\\` becomes `//`,
         // which is the forward-slash spelling of the same path.
         assert_eq!(display_path(Path::new(r"\\?\UNC\srv\share")), "//srv/share");
@@ -359,7 +360,10 @@ mod tests {
         let result = copy_dir_checked(&src, &dest, &root, OverwritePolicy::Fail);
         assert!(matches!(result, Err(ref e) if e.code == ErrorCode::Conflict));
         // Existing content untouched.
-        assert_eq!(fs::read_to_string(dest.join("SKILL.md")).unwrap(), "existing");
+        assert_eq!(
+            fs::read_to_string(dest.join("SKILL.md")).unwrap(),
+            "existing"
+        );
     }
 
     #[test]
@@ -432,8 +436,14 @@ mod tests {
         assert_eq!(
             entries,
             vec![
-                DirEntry { name: "a.md".into(), is_dir: false },
-                DirEntry { name: "subdir".into(), is_dir: true },
+                DirEntry {
+                    name: "a.md".into(),
+                    is_dir: false
+                },
+                DirEntry {
+                    name: "subdir".into(),
+                    is_dir: true
+                },
             ]
         );
     }

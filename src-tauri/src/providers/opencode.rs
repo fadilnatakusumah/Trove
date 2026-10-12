@@ -54,8 +54,7 @@ mod tests {
         let dir = OpencodeProvider.global_skills_dir().expect("some");
         // Not `~/.opencode` — OpenCode's primary location is under ~/.config.
         assert!(
-            dir.ends_with(".config/opencode/skills")
-                || dir.ends_with(".config\\opencode\\skills"),
+            dir.ends_with(".config/opencode/skills") || dir.ends_with(".config\\opencode\\skills"),
             "got {}",
             dir.display()
         );
@@ -65,8 +64,6 @@ mod tests {
     fn project_dir_follows_opencode_convention() {
         let dirs = OpencodeProvider.project_skills_dirs(Path::new("/tmp/proj"));
         assert_eq!(dirs.len(), 1);
-        assert!(
-            dirs[0].ends_with(".opencode/skills") || dirs[0].ends_with(".opencode\\skills")
-        );
+        assert!(dirs[0].ends_with(".opencode/skills") || dirs[0].ends_with(".opencode\\skills"));
     }
 }

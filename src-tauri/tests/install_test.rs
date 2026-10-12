@@ -49,10 +49,14 @@ fn happy_path_local_global_and_project() {
     // Root layout: the discovered dir is "." (the staged root itself).
     let installed = install_service::install_skills(
         &ClaudeProvider,
-        &SkillSource::Local { path: src.path().to_string_lossy().into_owned() },
+        &SkillSource::Local {
+            path: src.path().to_string_lossy().into_owned(),
+        },
         &staged,
         &[".".to_string()],
-        &SkillScope::Project { project_path: project.path().to_string_lossy().into_owned() },
+        &SkillScope::Project {
+            project_path: project.path().to_string_lossy().into_owned(),
+        },
         false,
     )
     .unwrap();
@@ -60,7 +64,12 @@ fn happy_path_local_global_and_project() {
     assert_eq!(installed.len(), 1);
     assert!(installed[0].installed_at.is_some());
     assert_eq!(installed[0].id, "happy", "id from frontmatter name");
-    assert!(project.path().join(".claude/skills/happy/SKILL.md").exists());
+    assert!(
+        project
+            .path()
+            .join(".claude/skills/happy/SKILL.md")
+            .exists()
+    );
 }
 
 #[test]
@@ -108,10 +117,12 @@ fn REGRESSION_stale_staging_paths_do_not_break_install() {
 
     assert_eq!(installed.len(), 1);
     assert_eq!(installed[0].id, "frontend-design");
-    assert!(project
-        .path()
-        .join(".claude/skills/frontend-design/SKILL.md")
-        .exists());
+    assert!(
+        project
+            .path()
+            .join(".claude/skills/frontend-design/SKILL.md")
+            .exists()
+    );
 }
 
 #[test]
@@ -152,10 +163,14 @@ fn collection_subset_selection_installs_only_selected() {
 
     let installed = install_service::install_skills(
         &ClaudeProvider,
-        &SkillSource::Local { path: src.path().to_string_lossy().into_owned() },
+        &SkillSource::Local {
+            path: src.path().to_string_lossy().into_owned(),
+        },
         &staged,
         &selected,
-        &SkillScope::Project { project_path: project.path().to_string_lossy().into_owned() },
+        &SkillScope::Project {
+            project_path: project.path().to_string_lossy().into_owned(),
+        },
         false,
     )
     .unwrap();
@@ -180,22 +195,33 @@ fn existing_skill_conflict_returns_conflict_without_overwrite() {
     let project = tempfile::TempDir::new().unwrap();
     let existing = project.path().join(".claude/skills/clash");
     fs::create_dir_all(&existing).unwrap();
-    fs::write(existing.join("SKILL.md"), "---\nname: clash\ndescription: original\n---\nORIGINAL").unwrap();
+    fs::write(
+        existing.join("SKILL.md"),
+        "---\nname: clash\ndescription: original\n---\nORIGINAL",
+    )
+    .unwrap();
 
     let err = install_service::install_skills(
         &ClaudeProvider,
-        &SkillSource::Local { path: src.path().to_string_lossy().into_owned() },
+        &SkillSource::Local {
+            path: src.path().to_string_lossy().into_owned(),
+        },
         &staged,
         // Discovered dirs are relative to the staged root.
         &["clash".to_string()],
-        &SkillScope::Project { project_path: project.path().to_string_lossy().into_owned() },
+        &SkillScope::Project {
+            project_path: project.path().to_string_lossy().into_owned(),
+        },
         false,
     )
     .unwrap_err();
 
     assert_eq!(err.code, app_lib::errors::ErrorCode::Conflict);
     let body = fs::read_to_string(existing.join("SKILL.md")).unwrap();
-    assert!(body.contains("ORIGINAL"), "zero-overwrite guarantee (Rule 14)");
+    assert!(
+        body.contains("ORIGINAL"),
+        "zero-overwrite guarantee (Rule 14)"
+    );
 }
 
 /// The reported bug: a destination occupied by a directory that holds no
@@ -220,10 +246,14 @@ fn conflict_on_non_skill_directory_explains_itself() {
 
     let err = install_service::install_skills(
         &ClaudeProvider,
-        &SkillSource::Local { path: src.path().to_string_lossy().into_owned() },
+        &SkillSource::Local {
+            path: src.path().to_string_lossy().into_owned(),
+        },
         &staged,
         &["frontend-design".to_string()],
-        &SkillScope::Project { project_path: project.path().to_string_lossy().into_owned() },
+        &SkillScope::Project {
+            project_path: project.path().to_string_lossy().into_owned(),
+        },
         false,
     )
     .unwrap_err();
@@ -261,16 +291,23 @@ fn replace_confirmed_swaps_the_occupant_into_the_trash() {
 
     let installed = install_service::install_skills(
         &ClaudeProvider,
-        &SkillSource::Local { path: src.path().to_string_lossy().into_owned() },
+        &SkillSource::Local {
+            path: src.path().to_string_lossy().into_owned(),
+        },
         &staged,
         &["frontend-design".to_string()],
-        &SkillScope::Project { project_path: project.path().to_string_lossy().into_owned() },
+        &SkillScope::Project {
+            project_path: project.path().to_string_lossy().into_owned(),
+        },
         true,
     )
     .unwrap();
 
     assert_eq!(installed.len(), 1);
-    assert!(occupied.join("SKILL.md").is_file(), "skill is installed now");
+    assert!(
+        occupied.join("SKILL.md").is_file(),
+        "skill is installed now"
+    );
     assert!(
         !occupied.join("README.md").exists(),
         "the previous occupant is gone (moved to the trash, not unlinked)"

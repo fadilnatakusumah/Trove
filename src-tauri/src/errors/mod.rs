@@ -27,15 +27,11 @@ impl ErrorCode {
     /// Human-readable default message (§25: never show raw `ENOENT`).
     pub fn default_message(self) -> &'static str {
         match self {
-            ErrorCode::ProviderNotFound => {
-                "That AI agent is not supported by Agent Manager."
-            }
+            ErrorCode::ProviderNotFound => "That AI agent is not supported by Agent Manager.",
             ErrorCode::SkillNotFound => {
                 "Agent Manager could not find that skill. It may have been moved or removed."
             }
-            ErrorCode::InvalidSkill => {
-                "No supported skill definition was found in that source."
-            }
+            ErrorCode::InvalidSkill => "No supported skill definition was found in that source.",
             ErrorCode::InstallFailed => {
                 "Agent Manager could not install the skill. Check the source and try again."
             }
@@ -45,15 +41,11 @@ impl ErrorCode {
             ErrorCode::PathEscape => {
                 "The operation was blocked because it would modify files outside the approved agent directories."
             }
-            ErrorCode::Conflict => {
-                "A skill with this name already exists at the destination."
-            }
+            ErrorCode::Conflict => "A skill with this name already exists at the destination.",
             ErrorCode::GitMissing => {
                 "Git is required to install skills from a repository, but it was not found on this machine."
             }
-            ErrorCode::Unsupported => {
-                "This action is not supported for this provider."
-            }
+            ErrorCode::Unsupported => "This action is not supported for this provider.",
         }
     }
 }
@@ -121,11 +113,10 @@ impl std::fmt::Display for ErrorCode {
 
 impl std::error::Error for AppError {}
 
-/// Tauri commands can return `Result<T, AppError>` directly: Tauri 2 has a
-/// blanket `impl<T: Serialize> From<T> for InvokeError`, so the struct
-/// serializes into the InvokeError payload ({ code, message, detail }) the
-/// frontend expects — no manual conversion needed.
-
+// Tauri commands can return `Result<T, AppError>` directly: Tauri 2 has a
+// blanket `impl<T: Serialize> From<T> for InvokeError`, so the struct
+// serializes into the InvokeError payload ({ code, message, detail }) the
+// frontend expects — no manual conversion needed.
 impl AppError {
     /// Map an io::Error against a path into a structured AppError with a
     /// human-readable message and the path as detail.
@@ -154,8 +145,7 @@ mod tests {
 
     #[test]
     fn serializes_to_frontend_contract() {
-        let err = AppError::new(ErrorCode::PermissionDenied)
-            .with_detail("os error 13".to_string());
+        let err = AppError::new(ErrorCode::PermissionDenied).with_detail("os error 13".to_string());
         let json = serde_json::to_value(&err).expect("serialize");
         assert_eq!(
             json,

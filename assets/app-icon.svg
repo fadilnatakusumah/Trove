@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!--
+    Agent Manager app icon (source of truth).
+
+    Concept: three stacked cards = a managed collection of skill modules, with
+    the front card carrying a small glyph and two text bars to read as "a skill
+    file". The tile is the app's indigo→violet accent.
+
+    Regenerate every platform variant with:
+      npx tauri icon assets/app-icon.svg
+
+    Legibility note: at 32px the stack silhouette is what reads; the glyph and
+    bars inside the front card resolve only at larger sizes. That is deliberate
+    — the small sizes stay clean rather than turning to mush.
+  -->
+  <defs>
+    <linearGradient id="tile" x1="0.05" y1="0" x2="0.95" y2="1">
+      <stop offset="0" stop-color="#4F46E5"/>
+      <stop offset="0.55" stop-color="#5B4BE0"/>
+      <stop offset="1" stop-color="#7C3AED"/>
+    </linearGradient>
+  </defs>
+
+  <!-- App tile. Corners stay transparent, as the icon generator expects. -->
+  <rect x="0" y="0" width="1024" height="1024" rx="224" fill="url(#tile)"/>
+
+  <!-- Back cards: lower opacity reads as depth without adding detail. -->
+  <rect x="272" y="264" width="480" height="128" rx="36" fill="#FFFFFF" opacity="0.30"/>
+  <rect x="272" y="448" width="480" height="128" rx="36" fill="#FFFFFF" opacity="0.55"/>
+
+  <!-- Front card -->
+  <rect x="272" y="632" width="480" height="128" rx="36" fill="#FFFFFF"/>
+
+  <!-- Skill glyph: a small rounded tile, then two bars standing in for text. -->
+  <rect x="320" y="664" width="64" height="64" rx="18" fill="#4F46E5"/>
+  <rect x="408" y="672" width="180" height="20" rx="10" fill="#A5B4FC"/>
+  <rect x="408" y="700" width="120" height="20" rx="10" fill="#C7D2FE"/>
+</svg>

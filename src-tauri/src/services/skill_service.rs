@@ -73,9 +73,15 @@ mod tests {
         )
         .expect("parses");
         assert_eq!(fm.name.as_deref(), Some("react-expert"));
-        assert_eq!(fm.description.as_deref(), Some("React development assistance"));
+        assert_eq!(
+            fm.description.as_deref(),
+            Some("React development assistance")
+        );
         assert_eq!(fm.version.as_deref(), Some("1.0"));
-        assert_eq!(fm.metadata.get("license").map(String::as_str), Some("Apache-2.0"));
+        assert_eq!(
+            fm.metadata.get("license").map(String::as_str),
+            Some("Apache-2.0")
+        );
     }
 
     #[test]

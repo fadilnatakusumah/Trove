@@ -2,3 +2,9 @@
 # will have compiled files and executables
 /target/
 /gen/schemas
+
+# Mobile icon variants. `npx tauri icon` writes these alongside the desktop
+# icons, but Phase 1 ships desktop only — keeping them out of the repo avoids
+# ~35 files of noise that nothing references.
+/icons/android/
+/icons/ios/

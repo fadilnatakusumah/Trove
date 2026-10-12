@@ -79,9 +79,10 @@ fn logged<T>(what: &str, result: Result<T, AppError>) -> Result<T, AppError> {
 /// Returns the path so the UI can show the user where their logs live.
 #[tauri::command]
 pub async fn open_logs(app: tauri::AppHandle) -> Result<String, AppError> {
-    let dir = app.path().app_log_dir().map_err(|e| {
-        AppError::new(ErrorCode::PermissionDenied).with_detail(e.to_string())
-    })?;
+    let dir = app
+        .path()
+        .app_log_dir()
+        .map_err(|e| AppError::new(ErrorCode::PermissionDenied).with_detail(e.to_string()))?;
     if !dir.is_dir() {
         // Not an error state worth alarming the user with — just nothing yet.
         return Err(AppError::new(ErrorCode::SkillNotFound).with_detail(format!(
@@ -103,21 +104,22 @@ pub async fn open_logs(app: tauri::AppHandle) -> Result<String, AppError> {
 /// Opens a skill/project directory with the OS file manager
 /// (Finder/Explorer/xdg-open, tech-plan §29). Only *reveals* — never executes.
 #[tauri::command]
-pub async fn open_folder(
-    app: tauri::AppHandle,
-    path: String,
-) -> Result<(), AppError> {
+pub async fn open_folder(app: tauri::AppHandle, path: String) -> Result<(), AppError> {
     let resolved = fs_service::resolve_home_relative(&path);
     if !resolved.is_dir() {
-        return Err(AppError::new(ErrorCode::SkillNotFound)
-            .with_detail(format!("'{}' is not a directory", fs_service::display_path(&resolved))));
+        return Err(AppError::new(ErrorCode::SkillNotFound).with_detail(format!(
+            "'{}' is not a directory",
+            fs_service::display_path(&resolved)
+        )));
     }
     log::info!("opening folder {}", fs_service::display_path(&resolved));
     app.opener()
         .open_path(resolved.to_string_lossy().into_owned(), None::<&str>)
         .map_err(|e| {
-            AppError::new(ErrorCode::PermissionDenied)
-                .with_detail(format!("failed to open '{}': {e}", fs_service::display_path(&resolved)))
+            AppError::new(ErrorCode::PermissionDenied).with_detail(format!(
+                "failed to open '{}': {e}",
+                fs_service::display_path(&resolved)
+            ))
         })
 }
 
@@ -126,9 +128,7 @@ pub async fn open_folder(
 pub async fn check_git() -> Result<git_service::GitProbe, AppError> {
     tauri::async_runtime::spawn_blocking(git_service::probe_git)
         .await
-        .map_err(|e| {
-            AppError::new(ErrorCode::InstallFailed).with_detail(e.to_string())
-        })?
+        .map_err(|e| AppError::new(ErrorCode::InstallFailed).with_detail(e.to_string()))?
 }
 
 // ---------------------------------------------------------------------------
@@ -137,8 +137,8 @@ pub async fn check_git() -> Result<git_service::GitProbe, AppError> {
 
 /// Detect every registered agent provider on this machine.
 #[tauri::command]
-pub async fn detect_providers(
-) -> Result<Vec<crate::providers::ProviderDetectionResult>, AppError> {
+pub async fn detect_providers() -> Result<Vec<crate::providers::ProviderDetectionResult>, AppError>
+{
     // Filesystem reads only; block briefly rather than spawning.
     Ok(crate::providers::detect_all())
 }
@@ -216,9 +216,8 @@ pub async fn install_skill(
     replace: bool,
 ) -> Result<Vec<crate::models::Skill>, AppError> {
     let staged = registry.claim(&staging_id).ok_or_else(|| {
-        AppError::new(ErrorCode::SkillNotFound).with_detail(
-            "that source is no longer staged — run Inspect again before installing",
-        )
+        AppError::new(ErrorCode::SkillNotFound)
+            .with_detail("that source is no longer staged — run Inspect again before installing")
     });
     // Logged here as well as through `logged` below: a lookup miss returns
     // before reaching the inner call, and an unlogged failure is how this bug
@@ -346,11 +345,7 @@ mod staging_tests {
 
     fn staged() -> StagedSource {
         let tmp = tempfile::TempDir::new().unwrap();
-        std::fs::write(
-            tmp.path().join("SKILL.md"),
-            "---\nname: staged\n---\nbody",
-        )
-        .unwrap();
+        std::fs::write(tmp.path().join("SKILL.md"), "---\nname: staged\n---\nbody").unwrap();
         crate::services::install_service::stage_source(&SkillSource::Local {
             path: tmp.path().to_string_lossy().into_owned(),
         })

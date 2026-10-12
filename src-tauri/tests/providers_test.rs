@@ -8,10 +8,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use app_lib::models::{ProviderId, SkillScope};
+use app_lib::providers;
 use app_lib::providers::claude::ClaudeProvider;
 use app_lib::providers::codex::CodexProvider;
 use app_lib::providers::cursor::CursorProvider;
-use app_lib::providers;
 
 /// Simulated HOME with the standard agent directories. Kept alive by the
 /// returned TempDir binding.
@@ -46,7 +46,8 @@ fn write_skill(root: &Path, category: Option<&str>, name: &str, fm: &str) -> Pat
     dir
 }
 
-const VALID_FM: &str = "---\nname: react-expert\ndescription: React development assistance\n---\n\n# React Expert\n";
+const VALID_FM: &str =
+    "---\nname: react-expert\ndescription: React development assistance\n---\n\n# React Expert\n";
 
 #[test]
 fn parse_skill_valid_fixture() {
@@ -83,8 +84,12 @@ fn parse_skill_invalid_fixture_returns_none() {
     let bad = write_skill(&root, None, "bad-frontmatter", "---\nname: oops\n");
 
     assert!(
-        providers::parse_skill_dir(&ClaudeProvider, &root.join("not-a-skill"), &SkillScope::Global)
-            .is_none()
+        providers::parse_skill_dir(
+            &ClaudeProvider,
+            &root.join("not-a-skill"),
+            &SkillScope::Global
+        )
+        .is_none()
     );
     assert!(
         providers::parse_skill_dir(&ClaudeProvider, &bad, &SkillScope::Global).is_none(),
@@ -106,7 +111,10 @@ fn parse_skill_records_name_mismatch() {
 
     let skill = providers::parse_skill_dir(&CodexProvider, &dir, &SkillScope::Global).unwrap();
     assert_eq!(skill.id, "dir-name");
-    assert_eq!(skill.metadata.get("nameMismatch").map(String::as_str), Some("frontmatter-name"));
+    assert_eq!(
+        skill.metadata.get("nameMismatch").map(String::as_str),
+        Some("frontmatter-name")
+    );
 }
 
 #[test]
@@ -123,15 +131,23 @@ fn get_skills_filters_by_scope_and_provider() {
     // A non-skill directory that must be skipped, not fail the listing.
     fs::create_dir_all(claude_root.join("junk-dir")).unwrap();
 
-    let claude_skills =
-        providers::skills_for_scope(&ClaudeProvider, &SkillScope::Project { project_path: project.to_string_lossy().into_owned() })
-            .unwrap();
+    let claude_skills = providers::skills_for_scope(
+        &ClaudeProvider,
+        &SkillScope::Project {
+            project_path: project.to_string_lossy().into_owned(),
+        },
+    )
+    .unwrap();
     assert_eq!(claude_skills.len(), 1, "provider sees only its own dirs");
     assert_eq!(claude_skills[0].id, "claude-only");
 
-    let cursor_skills =
-        providers::skills_for_scope(&CursorProvider, &SkillScope::Project { project_path: project.to_string_lossy().into_owned() })
-            .unwrap();
+    let cursor_skills = providers::skills_for_scope(
+        &CursorProvider,
+        &SkillScope::Project {
+            project_path: project.to_string_lossy().into_owned(),
+        },
+    )
+    .unwrap();
     assert_eq!(cursor_skills.len(), 1);
     assert_eq!(cursor_skills[0].id, "cursor-only");
 }
@@ -146,12 +162,20 @@ fn get_skills_discovers_nested_category_skills() {
     write_skill(&root, Some("shipping"), "land-it", VALID_FM);
     write_skill(&root, Some("workflow"), "tdd", VALID_FM);
 
-    let skills =
-        providers::skills_for_scope(&CursorProvider, &SkillScope::Project { project_path: project.to_string_lossy().into_owned() })
-            .unwrap();
+    let skills = providers::skills_for_scope(
+        &CursorProvider,
+        &SkillScope::Project {
+            project_path: project.to_string_lossy().into_owned(),
+        },
+    )
+    .unwrap();
     let mut ids: Vec<_> = skills.iter().map(|s| s.id.as_str()).collect();
     ids.sort();
-    assert_eq!(ids, vec!["land-it", "tdd"], "nested category skills discovered");
+    assert_eq!(
+        ids,
+        vec!["land-it", "tdd"],
+        "nested category skills discovered"
+    );
 }
 
 #[test]
@@ -175,7 +199,11 @@ fn detection_reports_every_provider_with_a_global_dir() {
     // Global dir paths are always populated (display target), even when the
     // dir doesn't exist on this machine.
     for r in &results {
-        assert!(r.global_skills_dir.is_some(), "{} has no global dir", r.name);
+        assert!(
+            r.global_skills_dir.is_some(),
+            "{} has no global dir",
+            r.name
+        );
     }
 }
 

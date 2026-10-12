@@ -36,22 +36,21 @@ struct ProjectStore {
 }
 
 impl ProjectStore {
-    fn file_path(app_data_dir: &PathBuf) -> PathBuf {
+    fn file_path(app_data_dir: &Path) -> PathBuf {
         app_data_dir.join("projects.json")
     }
 
-    fn load(app_data_dir: &PathBuf) -> Self {
+    fn load(app_data_dir: &Path) -> Self {
         std::fs::read_to_string(Self::file_path(app_data_dir))
             .ok()
             .and_then(|text| serde_json::from_str(&text).ok())
             .unwrap_or_default()
     }
 
-    fn save(&self, app_data_dir: &PathBuf) -> Result<(), AppError> {
+    fn save(&self, app_data_dir: &Path) -> Result<(), AppError> {
         let path = Self::file_path(app_data_dir);
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| AppError::from_io(&e, parent))?;
+            std::fs::create_dir_all(parent).map_err(|e| AppError::from_io(&e, parent))?;
         }
         let json = serde_json::to_string_pretty(self)
             .map_err(|e| AppError::new(ErrorCode::InstallFailed).with_detail(e.to_string()))?;
@@ -70,7 +69,13 @@ pub fn project_id_for(path: &str) -> String {
         .unwrap_or("project")
         .to_lowercase()
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
     // Short digest disambiguates same-named projects in different parents.
     let mut hash: u64 = 5381;
@@ -106,7 +111,10 @@ pub fn detect_project_providers(project: &str) -> Vec<ProviderId> {
             ],
         ),
         (ProviderId::Codex, vec![root.join(".agents").join("skills")]),
-        (ProviderId::Opencode, vec![root.join(".opencode").join("skills")]),
+        (
+            ProviderId::Opencode,
+            vec![root.join(".opencode").join("skills")],
+        ),
     ] {
         if dirs.iter().any(|d| d.is_dir()) && !found.contains(&id) {
             found.push(id);
@@ -139,17 +147,14 @@ impl ProjectRegistry {
             .projects
             .iter()
             .map(|p| RegisteredProject {
-                display_path: crate::services::filesystem_service::display_path(
-                    Path::new(&p.path),
-                ),
+                display_path: crate::services::filesystem_service::display_path(Path::new(&p.path)),
                 ..p.clone()
             })
             .collect()
     }
 
     pub fn add(&self, path: &str) -> Result<RegisteredProject, AppError> {
-        let resolved =
-            crate::services::filesystem_service::resolve_home_relative(path);
+        let resolved = crate::services::filesystem_service::resolve_home_relative(path);
         if !resolved.is_dir() {
             return Err(AppError::new(ErrorCode::SkillNotFound).with_detail(format!(
                 "'{}' is not a directory",

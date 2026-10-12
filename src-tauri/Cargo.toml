@@ -3,8 +3,8 @@ name = "agent-manager"
 version = "0.1.0"
 description = "Local AI agent environment manager"
 authors = ["Trove"]
-license = ""
-repository = ""
+license = "UNLICENSED"
+repository = "https://github.com/fadilnatakusumah/Trove"
 edition = "2024"
 rust-version = "1.90"
 

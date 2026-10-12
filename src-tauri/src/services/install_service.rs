@@ -22,7 +22,7 @@ use serde::Serialize;
 
 use crate::errors::{AppError, ErrorCode};
 use crate::models::{Skill, SkillScope, SkillSource};
-use crate::providers::{is_skill_dir, AgentProvider, SKILL_FILE};
+use crate::providers::{AgentProvider, SKILL_FILE, is_skill_dir};
 use crate::services::filesystem_service as fs;
 use crate::services::skill_service::parse_frontmatter;
 
@@ -123,9 +123,8 @@ pub fn stage_source(source: &SkillSource) -> Result<StagedSource, AppError> {
                     let candidate = temp.path().join(sub.replace('\\', "/"));
                     let resolved = fs::ensure_within(temp.path(), &candidate)?;
                     if !resolved.is_dir() {
-                        return Err(AppError::new(ErrorCode::InvalidSkill).with_detail(
-                            format!("the repository has no directory '{sub}'"),
-                        ));
+                        return Err(AppError::new(ErrorCode::InvalidSkill)
+                            .with_detail(format!("the repository has no directory '{sub}'")));
                     }
                     resolved
                 }
@@ -182,9 +181,7 @@ fn sanitize_url(url: &str) -> String {
     match rest.split_once('@') {
         // Only treat '@' as credentials when it precedes the first path
         // separator; otherwise it's part of the path and must be kept.
-        Some((creds, host_and_path))
-            if !creds.contains('/') && !host_and_path.is_empty() =>
-        {
+        Some((creds, host_and_path)) if !creds.contains('/') && !host_and_path.is_empty() => {
             format!("{scheme}://{host_and_path}")
         }
         _ => url.to_string(),
@@ -206,9 +203,7 @@ struct GitLocation {
 fn parse_git_location(input: &str, explicit_ref: Option<&str>) -> Result<GitLocation, AppError> {
     let trimmed = input.trim().trim_end_matches('/');
     if trimmed.is_empty() {
-        return Err(
-            AppError::new(ErrorCode::InstallFailed).with_detail("enter a repository URL")
-        );
+        return Err(AppError::new(ErrorCode::InstallFailed).with_detail("enter a repository URL"));
     }
 
     // scp-style ssh URL — git clones it verbatim.
@@ -244,11 +239,17 @@ fn parse_git_location(input: &str, explicit_ref: Option<&str>) -> Result<GitLoca
         && matches!(path_segments[2], "blob" | "tree" | "raw" | "edit" | "blame");
 
     if is_web_link {
-        let repo_url = format!("{scheme}://{host}/{}/{}", path_segments[0], path_segments[1]);
+        let repo_url = format!(
+            "{scheme}://{host}/{}/{}",
+            path_segments[0], path_segments[1]
+        );
         let ref_ = explicit_ref
             .map(str::to_string)
             .or_else(|| path_segments.get(3).map(|s| (*s).to_string()));
-        let path = path_segments.get(4..).map(|p| p.join("/")).unwrap_or_default();
+        let path = path_segments
+            .get(4..)
+            .map(|p| p.join("/"))
+            .unwrap_or_default();
         // `blob` names a file (typically SKILL.md) → its parent is the skill
         // dir. `tree` already names a directory.
         let subpath = if path.is_empty() {
@@ -275,7 +276,10 @@ fn parse_git_location(input: &str, explicit_ref: Option<&str>) -> Result<GitLoca
     }
 
     Ok(GitLocation {
-        repo_url: format!("{scheme}://{host}/{}/{}", path_segments[0], path_segments[1]),
+        repo_url: format!(
+            "{scheme}://{host}/{}/{}",
+            path_segments[0], path_segments[1]
+        ),
         ref_: explicit_ref.map(str::to_string),
         subpath: None,
     })
@@ -381,15 +385,15 @@ fn run_with_timeout(
                 if Instant::now() >= deadline {
                     let _ = child.kill();
                     let _ = child.wait();
-                    return Err(AppError::new(ErrorCode::InstallFailed).with_detail(format!(
-                        "git clone timed out after {timeout_secs}s"
-                    )));
+                    return Err(AppError::new(ErrorCode::InstallFailed)
+                        .with_detail(format!("git clone timed out after {timeout_secs}s")));
                 }
                 std::thread::sleep(Duration::from_millis(50));
             }
             Err(e) => {
-                return Err(AppError::new(ErrorCode::InstallFailed)
-                    .with_detail(format!("git wait: {e}")))
+                return Err(
+                    AppError::new(ErrorCode::InstallFailed).with_detail(format!("git wait: {e}"))
+                );
             }
         }
     };
@@ -408,13 +412,11 @@ fn inspect_staged(root: &Path) -> Result<SourceInspection, AppError> {
         let fm = fs::read_text_file_capped(&root.join("SKILL.md"))
             .ok()
             .and_then(|c| parse_frontmatter(&c));
-        skill.id = fm
-            .and_then(|f| f.name)
-            .ok_or_else(|| {
-                AppError::new(ErrorCode::InvalidSkill).with_detail(
-                    "root SKILL.md has no `name` in frontmatter — cannot derive install name",
-                )
-            })?;
+        skill.id = fm.and_then(|f| f.name).ok_or_else(|| {
+            AppError::new(ErrorCode::InvalidSkill).with_detail(
+                "root SKILL.md has no `name` in frontmatter — cannot derive install name",
+            )
+        })?;
         return Ok(SourceInspection::Single(skill));
     }
 
@@ -431,9 +433,8 @@ fn inspect_staged(root: &Path) -> Result<SourceInspection, AppError> {
         }
     }
     if skills.is_empty() {
-        return Err(AppError::new(ErrorCode::InvalidSkill).with_detail(
-            "no SKILL.md at the source root and none in immediate subdirectories",
-        ));
+        return Err(AppError::new(ErrorCode::InvalidSkill)
+            .with_detail("no SKILL.md at the source root and none in immediate subdirectories"));
     }
     Ok(SourceInspection::Collection { skills })
 }
@@ -485,9 +486,9 @@ pub fn install_skills(
             .ok_or_else(|| AppError::new(ErrorCode::ProviderNotFound))?,
         SkillScope::Project { project_path } => {
             let dirs = provider.project_skills_dirs(&fs::resolve_home_relative(project_path));
-            let first = dirs.first().ok_or_else(|| {
-                AppError::new(ErrorCode::ProviderNotFound)
-            })?;
+            let first = dirs
+                .first()
+                .ok_or_else(|| AppError::new(ErrorCode::ProviderNotFound))?;
             // Primary convention dir for installs; ensure it exists.
             fs::ensure_dir(first)?;
             first.clone()
@@ -516,17 +517,14 @@ pub fn install_skills(
         };
         let src = fs::ensure_within(staged.root(), &candidate)?;
         if !src.is_dir() {
-            return Err(AppError::new(ErrorCode::SkillNotFound).with_detail(format!(
-                "'{rel}' does not exist in the repository"
-            )));
+            return Err(AppError::new(ErrorCode::SkillNotFound)
+                .with_detail(format!("'{rel}' does not exist in the repository")));
         }
 
         let id = discovered
             .get(rel)
             .map(|s| s.id.clone())
-            .or_else(|| {
-                src.file_name().map(|n| n.to_string_lossy().into_owned())
-            })
+            .or_else(|| src.file_name().map(|n| n.to_string_lossy().into_owned()))
             .ok_or_else(|| {
                 AppError::new(ErrorCode::InvalidSkill).with_detail(format!("bad dir '{rel}'"))
             })?;
@@ -615,10 +613,10 @@ fn build_installed_skill(
         .and_then(|c| parse_frontmatter(&c));
 
     let mut metadata = fm.as_ref().map(|f| f.metadata.clone()).unwrap_or_default();
-    if let Some(name) = fm.as_ref().and_then(|f| f.name.as_ref()) {
-        if *name != id {
-            metadata.insert("nameMismatch".to_string(), name.clone());
-        }
+    if let Some(name) = fm.as_ref().and_then(|f| f.name.as_ref())
+        && *name != id
+    {
+        metadata.insert("nameMismatch".to_string(), name.clone());
     }
 
     Skill {
@@ -654,7 +652,12 @@ fn now_rfc3339() -> String {
     let days = secs / 86_400;
     let (y, m, d) = civil_from_days(days as i64);
     let rem = secs % 86_400;
-    format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", rem / 3600, (rem % 3600) / 60, rem % 60)
+    format!(
+        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z",
+        rem / 3600,
+        (rem % 3600) / 60,
+        rem % 60
+    )
 }
 
 /// Howard Hinnant's civil_from_days — small, correct, well-known.
@@ -713,7 +716,10 @@ mod tests {
             json["stagingId"], "staging-7",
             "the frontend reads `stagingId` — camelCase, not snake_case"
         );
-        assert!(json["inspection"]["kind"].is_string(), "inspection is tagged");
+        assert!(
+            json["inspection"]["kind"].is_string(),
+            "inspection is tagged"
+        );
 
         // The handle is not a function of the source, so the `ref` key being
         // present-as-null or absent makes no difference to it.
@@ -732,7 +738,11 @@ mod tests {
     #[test]
     fn stage_local_single_skill_repo() {
         let tmp = tempfile::TempDir::new().unwrap();
-        std::fs::write(tmp.path().join("SKILL.md"), "---\nname: root-skill\ndescription: d\n---\n").unwrap();
+        std::fs::write(
+            tmp.path().join("SKILL.md"),
+            "---\nname: root-skill\ndescription: d\n---\n",
+        )
+        .unwrap();
 
         let staged = stage_source(&SkillSource::Local {
             path: tmp.path().to_string_lossy().into_owned(),
@@ -803,7 +813,11 @@ mod tests {
         assert_eq!(skills.len(), 1);
         assert_eq!(skills[0].dir, "frontend-design");
         assert!(
-            staged.root().join(&skills[0].dir).join(SKILL_FILE).is_file(),
+            staged
+                .root()
+                .join(&skills[0].dir)
+                .join(SKILL_FILE)
+                .is_file(),
             "the reviewed relative dir must resolve to a real skill under root()"
         );
     }
@@ -848,7 +862,11 @@ mod tests {
             "copying a non-skill must fail loudly, never report success"
         );
         assert!(
-            !project.path().join(".claude/skills").join("real-skill").exists(),
+            !project
+                .path()
+                .join(".claude/skills")
+                .join("real-skill")
+                .exists(),
             "nothing should have been copied"
         );
     }
@@ -972,7 +990,10 @@ mod tests {
                 .exists(),
             "skill copied into project .claude/skills"
         );
-        assert!(!project.path().join(".claude/skills/beta").exists(), "unselected skill not installed");
+        assert!(
+            !project.path().join(".claude/skills/beta").exists(),
+            "unselected skill not installed"
+        );
     }
 
     #[test]
@@ -989,14 +1010,25 @@ mod tests {
         // Pre-existing skill with different content.
         let existing = project.path().join(".claude/skills/dup");
         std::fs::create_dir_all(&existing).unwrap();
-        std::fs::write(existing.join("SKILL.md"), "---\nname: dup\ndescription: original\n---\nORIGINAL").unwrap();
+        std::fs::write(
+            existing.join("SKILL.md"),
+            "---\nname: dup\ndescription: original\n---\nORIGINAL",
+        )
+        .unwrap();
 
         // Discovered dirs are relative to the staged root.
-        let dirs: Vec<String> = staged.inspection().skills().iter().map(|s| s.dir.clone()).collect();
+        let dirs: Vec<String> = staged
+            .inspection()
+            .skills()
+            .iter()
+            .map(|s| s.dir.clone())
+            .collect();
 
         let err = install_skills(
             &ClaudeProvider,
-            &SkillSource::Local { path: tmp.path().to_string_lossy().into_owned() },
+            &SkillSource::Local {
+                path: tmp.path().to_string_lossy().into_owned(),
+            },
             &staged,
             &dirs,
             &SkillScope::Project { project_path },
@@ -1006,7 +1038,9 @@ mod tests {
 
         assert_eq!(err.code, ErrorCode::Conflict);
         assert!(
-            std::fs::read_to_string(existing.join("SKILL.md")).unwrap().contains("ORIGINAL"),
+            std::fs::read_to_string(existing.join("SKILL.md"))
+                .unwrap()
+                .contains("ORIGINAL"),
             "existing skill untouched (Rule 14)"
         );
     }

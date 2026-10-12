@@ -19,7 +19,7 @@ use std::path::PathBuf;
 use crate::errors::{AppError, ErrorCode};
 use crate::models::{ProviderId, SkillScope};
 use crate::providers::{
-    is_skill_dir, provider_by_id, AgentProvider, DISABLED_SKILL_FILE, SKILL_FILE,
+    AgentProvider, DISABLED_SKILL_FILE, SKILL_FILE, is_skill_dir, provider_by_id,
 };
 use crate::services::filesystem_service as fs;
 
@@ -27,10 +27,7 @@ use crate::services::filesystem_service as fs;
 /// (Cursor reads both `.cursor/skills` and `.agents/skills`), so callers must
 /// consider all of them — resolving only the first would fail to find skills
 /// that `get_skills` legitimately listed from the second.
-fn skill_roots(
-    provider: &dyn AgentProvider,
-    scope: &SkillScope,
-) -> Result<Vec<PathBuf>, AppError> {
+fn skill_roots(provider: &dyn AgentProvider, scope: &SkillScope) -> Result<Vec<PathBuf>, AppError> {
     let roots: Vec<PathBuf> = match scope {
         SkillScope::Global => provider.global_skills_dir().into_iter().collect(),
         SkillScope::Project { project_path } => {

@@ -1,0 +1,124 @@
+name: Release
+
+# Cut a release by pushing a version tag that matches `package.json`:
+#
+#   npm version patch --no-git-tag-version   # or minor / major
+#   git commit -am "chore: release v0.2.0"
+#   git tag v0.2.0
+#   git push && git push --tags
+#
+# The tag is the only trigger for a release. `workflow_dispatch` is deliberately
+# absent: a manual run would have no tag to name the release after, and Tauri's
+# `__VERSION__` substitution needs a version to resolve.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# tauri-action creates the release and uploads assets to it.
+permissions:
+  contents: write
+
+jobs:
+  # One job per platform/arch, so a failure on one does not cancel the others.
+  # `fail-fast: false` matters here: a Windows-only failure should still leave
+  # the macOS and Linux artifacts built and inspectable.
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS: separate runners per architecture. Cross-compiling between
+          # them is possible but the resulting bundles are not equivalent to
+          # native builds, and this app has no need for universal binaries.
+          - platform: macos-latest
+            args: --target aarch64-apple-darwin
+            label: macOS (Apple Silicon)
+          - platform: macos-latest
+            args: --target x86_64-apple-darwin
+            label: macOS (Intel)
+          # ubuntu-22.04, not ubuntu-latest: the AppImage/deb builds link
+          # against the runner's glibc, so building on an older LTS keeps the
+          # binaries runnable on a wider range of distributions.
+          - platform: ubuntu-22.04
+            args: ""
+            label: Linux
+          - platform: windows-latest
+            args: ""
+            label: Windows
+
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # Both macOS targets are installed so the runner can build either;
+          # the actual target comes from `matrix.args`.
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      # Compiling the whole dependency tree is the slowest step; caching it
+      # turns a ~15 minute cold build into a couple of minutes.
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            xdg-utils
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # The tests must pass before anything is published. A release is the
+      # worst place to discover a regression, and the safety-critical suites
+      # (traversal guards, zero-overwrite installs, the lifecycle flow) are the
+      # ones a packaging change is most likely to break.
+      - name: Verify the tag matches package.json
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::tag v$tag does not match package.json version $pkg"
+            echo "Run 'npm version $tag --no-git-tag-version', commit, and re-tag."
+            exit 1
+          fi
+
+      - name: Test (Rust)
+        working-directory: src-tauri
+        run: cargo test
+
+      - name: Test (frontend type-check + build)
+        run: npm run build
+
+      - name: Build and publish
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Agent Manager ${{ github.ref_name }}"
+          # Draft by default: the maintainer reviews the uploaded assets and
+          # writes the notes before anything becomes public.
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}

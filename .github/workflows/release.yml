@@ -60,19 +60,16 @@ jobs:
           node-version: lts/*
           cache: npm
 
+      # Reads the pinned version and components from rust-toolchain.toml, so a
+      # release is built by the same compiler CI verified. Passing a `toolchain`
+      # input here would make the action ignore that file.
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
-          # Both macOS targets are installed so the runner can build either;
-          # the actual target comes from `matrix.args`.
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-
-      # Compiling the whole dependency tree is the slowest step; caching it
-      # turns a ~15 minute cold build into a couple of minutes.
-      - name: Cache Rust build
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri -> target
+          rust-src-dir: src-tauri
+          # Both macOS targets, so either matrix entry can build; the target
+          # actually built comes from `matrix.args`.
+          target: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Install Linux system dependencies
         if: matrix.platform == 'ubuntu-22.04'

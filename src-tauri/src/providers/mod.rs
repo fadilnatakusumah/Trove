@@ -167,7 +167,10 @@ pub fn skills_for_scope(
             }
         }
     }
-    skills.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    // Case-insensitive by name. `sort_by_cached_key` computes each key once
+    // rather than on every comparison — `sort_by_key` here would allocate a
+    // fresh lowercase `String` O(n log n) times.
+    skills.sort_by_cached_key(|a| a.name.to_lowercase());
     log::info!(
         "loaded {} skill(s) for {} ({})",
         skills.len(),
